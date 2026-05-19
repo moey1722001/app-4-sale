@@ -528,6 +528,7 @@ h1 {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 12px;
+  cursor: pointer;
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 
@@ -561,6 +562,32 @@ h1 {
   align-items: flex-end;
   flex-direction: column;
   gap: 6px;
+}
+
+.tenant-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.tenant-delete {
+  border: 0;
+  border-radius: 10px;
+  min-height: 36px;
+  padding: 7px 10px;
+  background: #fee2e2;
+  color: #991b1b;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.tenant-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .status-dot,
@@ -1827,6 +1854,12 @@ h1 {
 
   .tenant-meta {
     align-items: flex-start;
+  }
+
+  .tenant-actions {
+    align-items: flex-start;
+    justify-content: space-between;
+    width: 100%;
   }
 
   .staff-row,

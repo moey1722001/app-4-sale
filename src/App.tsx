@@ -468,8 +468,9 @@ function App() {
     const email = loginEmail.trim().toLowerCase();
     const user = demoUsers.find((candidate) => candidate.email === email && candidate.role === loginRole);
     const passwordOk = user?.role === 'super' ? await passwordDigest(loginPassword) === demoSuperAdminPasswordHash : Boolean(loginPassword.trim());
+    const organisationAvailable = !user?.businessId || businesses.some((business) => business.id === user.businessId && business.active);
 
-    if (!user || !passwordOk) {
+    if (!user || !passwordOk || !organisationAvailable) {
       setLoginError('Check the email, password, and role. This account is not assigned to that dashboard.');
       return;
     }
@@ -561,6 +562,25 @@ function App() {
     setNewBusinessIndustry('');
     setNewBusinessLocation('');
     setNewBusinessAdminEmail('');
+  }
+
+  function deleteBusiness(businessId: string) {
+    const business = businesses.find((item) => item.id === businessId);
+    if (!business || businesses.length <= 1) return;
+    if (!window.confirm(`Delete ${business.name}? This removes its jobs, rosters, and pending invites from this workspace.`)) return;
+
+    const remainingBusinesses = businesses.filter((item) => item.id !== businessId);
+    const nextActiveBusiness = remainingBusinesses[0];
+
+    setBusinesses(remainingBusinesses);
+    setJobs((current) => current.filter((job) => job.businessId !== businessId));
+    setRosterShifts((current) => current.filter((shift) => shift.businessId !== businessId));
+    setOrganisationInvites((current) => current.filter((invite) => invite.businessId !== businessId));
+    setProviderDrafts((drafts) => {
+      const { [businessId]: _removed, ...remainingDrafts } = drafts;
+      return remainingDrafts;
+    });
+    setActiveBusinessId(nextActiveBusiness.id);
   }
 
   function uploadBusinessLogo(businessId: string, file?: File) {
@@ -942,6 +962,7 @@ function App() {
             copiedInviteId={copiedInviteId}
             copyInviteLink={copyInviteLink}
             addBusiness={addBusiness}
+            deleteBusiness={deleteBusiness}
             uploadBusinessLogo={uploadBusinessLogo}
           />
         )}
@@ -1031,6 +1052,7 @@ function SuperAdminView({
   copiedInviteId,
   copyInviteLink,
   addBusiness,
+  deleteBusiness,
   uploadBusinessLogo
 }: {
   businesses: Business[];
@@ -1049,6 +1071,7 @@ function SuperAdminView({
   copiedInviteId: string;
   copyInviteLink: (inviteId: string) => void;
   addBusiness: () => void;
+  deleteBusiness: (businessId: string) => void;
   uploadBusinessLogo: (businessId: string, file?: File) => void;
 }) {
   const activeTenants = tenants.filter((tenant) => tenant.active).length;
@@ -1077,23 +1100,42 @@ function SuperAdminView({
         </div>
         <div className="tenant-list">
           {tenants.map((tenant) => (
-            <button
+            <div
               key={tenant.id}
               className={`tenant-row ${activeBusinessId === tenant.id ? 'selected' : ''}`}
+              role="button"
+              tabIndex={0}
               onClick={() => onBusinessChange(tenant.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') onBusinessChange(tenant.id);
+              }}
             >
               <div>
                 <strong>{tenant.name}</strong>
                 <span>{tenant.industry} · {tenant.location}</span>
               </div>
-              <div className="tenant-meta">
-                <span>{tenant.plan}</span>
-                <span className={tenant.active ? 'status-dot active' : 'status-dot paused'}>
-                  {tenant.active ? 'Enabled' : 'Disabled'}
-                </span>
+              <div className="tenant-actions">
+                <div className="tenant-meta">
+                  <span>{tenant.plan}</span>
+                  <span className={tenant.active ? 'status-dot active' : 'status-dot paused'}>
+                    {tenant.active ? 'Enabled' : 'Disabled'}
+                  </span>
+                </div>
+                <button
+                  className="tenant-delete"
+                  disabled={tenants.length <= 1}
+                  aria-label={`Delete ${tenant.name}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    deleteBusiness(tenant.id);
+                  }}
+                >
+                  <X size={16} />
+                  Delete
+                </button>
               </div>
               <ChevronRight size={18} />
-            </button>
+            </div>
           ))}
         </div>
       </section>
