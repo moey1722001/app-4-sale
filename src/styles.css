@@ -259,6 +259,89 @@ h1 {
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
 }
 
+.overview-screen {
+  min-height: 100vh;
+  padding: 32px;
+  display: grid;
+  align-content: center;
+  gap: 18px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(79, 70, 229, 0.16), transparent 30%),
+    #f3f6ff;
+}
+
+.overview-hero {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 22px;
+  padding: 34px;
+  border-radius: 24px;
+  background: white;
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+}
+
+.overview-hero h1 {
+  max-width: 820px;
+}
+
+.overview-hero p {
+  max-width: 720px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-top: 12px;
+}
+
+.overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.overview-actions a {
+  text-decoration: none;
+}
+
+.overview-grid,
+.overview-demo-strip {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+}
+
+.overview-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.overview-card,
+.overview-demo-strip div {
+  padding: 16px;
+  border-radius: 16px;
+  background: white;
+  border: 1px solid var(--line);
+}
+
+.overview-card {
+  display: grid;
+  gap: 10px;
+}
+
+.overview-card svg {
+  color: var(--brand);
+}
+
+.overview-card p,
+.overview-demo-strip span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.overview-demo-strip {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .login-brand span {
   color: var(--muted);
 }
@@ -806,6 +889,63 @@ h1 {
   color: var(--muted);
   font-size: 0.82rem;
   text-align: center;
+}
+
+.activity-list,
+.story-steps {
+  display: grid;
+  gap: 10px;
+}
+
+.activity-list div,
+.story-steps div,
+.customer-link-row {
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.activity-list strong,
+.activity-list span,
+.story-steps strong,
+.story-steps span {
+  display: block;
+}
+
+.activity-list span,
+.story-steps span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  margin-top: 3px;
+}
+
+.story-steps {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.full-width {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.customer-link-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.customer-link-row span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.customer-link-row a {
+  color: var(--brand);
+  font-weight: 900;
+  text-decoration: none;
 }
 
 .roster-planner {
@@ -1898,6 +2038,9 @@ h1 {
   .business-create-form,
   .credential-form,
   .provider-options,
+  .story-steps,
+  .overview-grid,
+  .overview-demo-strip,
   .roster-form,
   .workflow-editor-row,
   .workbench,
@@ -1949,6 +2092,14 @@ h1 {
 }
 
 @media (max-width: 640px) {
+  .overview-screen {
+    padding: 14px;
+  }
+
+  .overview-hero {
+    padding: 22px;
+  }
+
   .main,
   .sidebar {
     padding: 14px;
@@ -1957,6 +2108,7 @@ h1 {
   .topbar,
   .jobs-header,
   .job-title,
+  .customer-link-row,
   .payment-panel,
   .shift-hero {
     align-items: stretch;

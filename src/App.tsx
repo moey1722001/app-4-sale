@@ -209,6 +209,45 @@ const initialBusinesses: Business[] = [
     smsProvider: null,
     smsSenderName: 'STITCH',
     smsSetupStatus: 'not_configured'
+  },
+  {
+    id: 'paws-and-polish',
+    name: 'Paws & Polish Grooming',
+    industry: 'Pet groomer',
+    location: 'Marrickville',
+    plan: 'Growth',
+    active: true,
+    staff: 6,
+    sms: 864,
+    jobs: 28,
+    primary: '#0f766e',
+    accent: '#f59e0b',
+    sender: 'PAWSPOLISH',
+    adminEmail: 'owner@pawspolish.test',
+    messagingEnabled: true,
+    smsProvider: 'clicksend',
+    smsSenderName: 'PAWSPOLISH',
+    smsSetupStatus: 'connected',
+    maskedKeyPreview: '...P4WS'
+  },
+  {
+    id: 'glow-lane',
+    name: 'Glow Lane Beauty',
+    industry: 'Beauty clinic',
+    location: 'Surry Hills',
+    plan: 'Starter',
+    active: true,
+    staff: 4,
+    sms: 512,
+    jobs: 19,
+    primary: '#be123c',
+    accent: '#f97316',
+    sender: 'GLOWLANE',
+    adminEmail: 'hello@glowlane.test',
+    messagingEnabled: false,
+    smsProvider: null,
+    smsSenderName: 'GLOWLANE',
+    smsSetupStatus: 'not_configured'
   }
 ];
 
@@ -318,6 +357,61 @@ const seedJobs: Job[] = [
       { status: 'collected', at: 'Yesterday', sms: 'We have received your order.' },
       { status: 'ready_for_pickup', at: '11:35 AM', sms: 'Your order is ready for pickup.' }
     ]
+  },
+  {
+    id: 'J-2051',
+    customer: 'Daniel Harper',
+    phone: '+61 430 118 442',
+    item: 'Toyota Corolla inspection',
+    serviceType: 'Vehicle inspection',
+    priority: 'Standard',
+    estimate: '$189',
+    notes: 'Customer asked for tyre and brake photos before approval.',
+    status: 'in_progress',
+    paid: false,
+    due: 'Today 5:00 PM',
+    businessId: 'rapid-auto',
+    updates: [
+      { status: 'collected', at: '8:10 AM', sms: 'Vehicle checked in.' },
+      { status: 'in_progress', at: '11:20 AM', sms: 'Inspection has started. We will send findings shortly.' }
+    ]
+  },
+  {
+    id: 'J-3052',
+    customer: 'Priya Nair',
+    phone: '+61 411 330 889',
+    item: 'Milo full groom',
+    serviceType: 'Pet grooming',
+    priority: 'Standard',
+    estimate: '$72',
+    notes: 'Milo is nervous around dryers. Use low speed.',
+    status: 'ready_for_pickup',
+    paid: true,
+    paidAt: '1:15 PM',
+    due: 'Today 3:30 PM',
+    businessId: 'paws-and-polish',
+    updates: [
+      { status: 'collected', at: '10:05 AM', sms: 'Milo has arrived safely.' },
+      { status: 'ready_for_pickup', at: '2:40 PM', sms: 'Milo is ready for pickup and looking fresh.' }
+    ]
+  },
+  {
+    id: 'J-4053',
+    customer: 'Emma Wilson',
+    phone: '+61 422 902 144',
+    item: 'Skin consultation reminder',
+    serviceType: 'Appointment reminder',
+    priority: 'Standard',
+    estimate: '$0',
+    notes: 'Send reminder before appointment. Customer prefers SMS.',
+    status: 'completed',
+    paid: true,
+    paidAt: 'Yesterday',
+    due: 'Tomorrow 10:00 AM',
+    businessId: 'glow-lane',
+    updates: [
+      { status: 'completed', at: 'Yesterday', sms: 'Appointment reminder sent for tomorrow at 10:00 AM.' }
+    ]
   }
 ];
 
@@ -374,6 +468,17 @@ const demoUsers: AuthUser[] = [
 ];
 
 const demoSuperAdminPasswordHash = '6d7c8cf940fcbb15e4a46bb697fd8560022500ffe874e50117a292f8cbc6a469';
+const demoEmailByRole: Record<UserRole, string> = {
+  super: 'moey1722001@gmail.com',
+  admin: 'owner@freshfold.test',
+  staff: 'mia@freshfold.test'
+};
+const demoHighlights = [
+  'White-label dashboard for laundromats, mechanics, groomers, cleaners, clinics, and repair shops',
+  'Simple job workflow: collected, in progress, ready for pickup, completed',
+  'Customer updates are previewed, logged, and sent only when the business connects its own SMS provider',
+  'Staff can see today’s work, notes, payments, rosters, and shift clock status'
+];
 
 function portalFromPath(pathname: string): Portal {
   if (pathname.startsWith('/super-admin')) return 'super';
@@ -532,6 +637,7 @@ function fileToDataUrl(file: File) {
 
 function App() {
   const initialPath = getInitialPath();
+  const isOverviewPath = initialPath === '/' || initialPath.startsWith('/overview');
   const [portal, setPortal] = useState<Portal>(() => portalFromPath(initialPath));
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [loginRole, setLoginRole] = useState<UserRole>(() => portalFromPath(initialPath));
@@ -633,6 +739,11 @@ function App() {
   const customerTrackJobId = currentPath.match(/^\/track\/([^/]+)/)?.[1] ? decodeURIComponent(currentPath.match(/^\/track\/([^/]+)/)?.[1] ?? '') : '';
   const customerTrackJob = customerTrackJobId ? jobs.find((job) => job.id === customerTrackJobId) : undefined;
   const customerTrackBusiness = customerTrackJob ? businesses.find((business) => business.id === customerTrackJob.businessId) : undefined;
+
+  function resetDemoData() {
+    [businessStorageKey, inviteStorageKey, userStorageKey].forEach((key) => localStorage.removeItem(key));
+    window.location.href = '/overview';
+  }
 
   useEffect(() => {
     writeStoredArray(businessStorageKey, businesses);
@@ -1159,8 +1270,17 @@ function App() {
     setSmsNotice('Customer SMS sent using the organisation provider.');
   }
 
+  async function copyPreviewSms() {
+    if (!smsPreview) return;
+    await navigator.clipboard?.writeText(smsPreview.message);
+    setSmsNotice('Customer update copied. You can paste it into SMS, email, or chat for the demo.');
+  }
+
   function addJob() {
-    if (!newCustomer.trim() || !newPhone.trim()) return;
+    if (!newCustomer.trim() || !newPhone.trim()) {
+      setSmsNotice('Add the customer name and mobile number before creating a job.');
+      return;
+    }
 
     const job: Job = {
       id: `J-${1051 + jobs.length}`,
@@ -1189,6 +1309,7 @@ function App() {
     setNewCustomer('');
     setNewPhone('');
     setNewJobNotes('');
+    setSmsNotice('Job created. Move it through the workflow to preview customer updates.');
   }
 
   function addRosterShift() {
@@ -1293,6 +1414,14 @@ function App() {
     return (
       <BrandProvider brand={brandFromBusiness(customerTrackBusiness)}>
         <CustomerStatusView job={customerTrackJob} business={customerTrackBusiness} />
+      </BrandProvider>
+    );
+  }
+
+  if (!authUser && isOverviewPath) {
+    return (
+      <BrandProvider brand={platformBrand}>
+        <ProductOverviewView />
       </BrandProvider>
     );
   }
@@ -1408,6 +1537,7 @@ function App() {
             uploadBusinessLogo={uploadBusinessLogo}
             removeBusinessLogo={removeBusinessLogo}
             updateBusinessBrand={updateBusinessBrand}
+            resetDemoData={resetDemoData}
           />
         )}
 
@@ -1472,7 +1602,7 @@ function App() {
           />
         )}
         {smsPreview && (
-          <SmsPreviewModal preview={smsPreview} provider={activeBusiness.smsProvider} onSend={sendPreviewSms} onClose={() => setSmsPreview(null)} />
+          <SmsPreviewModal preview={smsPreview} provider={activeBusiness.smsProvider} onSend={sendPreviewSms} onCopy={copyPreviewSms} onClose={() => setSmsPreview(null)} />
         )}
       </main>
     </div>
@@ -1507,7 +1637,8 @@ function SuperAdminView({
   deleteBusiness,
   uploadBusinessLogo,
   removeBusinessLogo,
-  updateBusinessBrand
+  updateBusinessBrand,
+  resetDemoData
 }: {
   businesses: Business[];
   activeBusinessId: string;
@@ -1536,6 +1667,7 @@ function SuperAdminView({
   uploadBusinessLogo: (businessId: string, file?: File) => void;
   removeBusinessLogo: (businessId: string) => void;
   updateBusinessBrand: (businessId: string, patch: Partial<Pick<Business, 'primary' | 'accent'>>) => void;
+  resetDemoData: () => void;
 }) {
   const activeTenants = tenants.filter((tenant) => tenant.active).length;
   const connectedMessagingTenants = tenants.filter((tenant) => tenant.messagingEnabled).length;
@@ -1550,7 +1682,7 @@ function SuperAdminView({
       </section>
 
       <section className="panel wide">
-        <PanelHeader icon={Settings} title="Business Management" />
+        <PanelHeader icon={Settings} title="Business Management" action="Create, brand, invite" />
         <div className="business-create-form">
           <input value={newBusinessName} onChange={(event) => setNewBusinessName(event.target.value)} placeholder="Business name" />
           <input value={newBusinessContactName} onChange={(event) => setNewBusinessContactName(event.target.value)} placeholder="Contact name" />
@@ -1690,6 +1822,17 @@ function SuperAdminView({
           <Setting label="Credentials" value="Encrypted server-side only" />
         </div>
       </section>
+
+      <section className="panel">
+        <PanelHeader icon={Activity} title="Demo Activity" action="Last updated just now" />
+        <div className="activity-list">
+          <div><strong>Fresh Fold Laundry</strong><span>3 jobs moving through pickup workflow</span></div>
+          <div><strong>Rapid Auto Care</strong><span>Inspection update ready to preview</span></div>
+          <div><strong>Paws & Polish</strong><span>Customer pickup notification sent</span></div>
+          <div><strong>Demo reset</strong><span>Restore sample data before a client meeting</span></div>
+        </div>
+        <button className="secondary-action full-width" onClick={resetDemoData}>Reset demo data</button>
+      </section>
     </div>
   );
 }
@@ -1733,7 +1876,14 @@ function LoginView({
           {(Object.keys(portalMeta) as UserRole[]).map((key) => {
             const Icon = portalMeta[key].icon;
             return (
-              <button key={key} className={role === key ? 'active' : ''} onClick={() => setRole(key)}>
+              <button
+                key={key}
+                className={role === key ? 'active' : ''}
+                onClick={() => {
+                  setRole(key);
+                  setEmail(demoEmailByRole[key]);
+                }}
+              >
                 <Icon size={17} />
                 {portalMeta[key].label}
               </button>
@@ -1755,6 +1905,46 @@ function LoginView({
           <span>Business Admin: owner@freshfold.test</span>
           <span>Staff: mia@freshfold.test</span>
         </div>
+        <a className="login-link" href="/overview">View product overview</a>
+      </section>
+    </main>
+  );
+}
+
+function ProductOverviewView() {
+  return (
+    <main className="overview-screen">
+      <section className="overview-hero">
+        <div className="brand-lockup">
+          <BrandMark className="login-logo" />
+          <div>
+            <strong>Verola</strong>
+            <span>White-label workflow updates for service businesses</span>
+          </div>
+        </div>
+        <div>
+          <span className="eyebrow">Client-ready SaaS demo</span>
+          <h1>Track every customer job and keep people updated automatically.</h1>
+          <p>Verola gives small service businesses a branded portal for drop-offs, job progress, staff handover, rosters, payments, and customer SMS updates.</p>
+        </div>
+        <div className="overview-actions">
+          <a className="primary-action" href="/login">Open demo login</a>
+          <a className="secondary-action" href="/super-admin">Super Admin portal</a>
+        </div>
+      </section>
+      <section className="overview-grid">
+        {demoHighlights.map((highlight) => (
+          <article className="overview-card" key={highlight}>
+            <CheckCircle2 size={20} />
+            <p>{highlight}</p>
+          </article>
+        ))}
+      </section>
+      <section className="overview-demo-strip">
+        <div><strong>Laundromat</strong><span>Order ready for pickup</span></div>
+        <div><strong>Mechanic</strong><span>Vehicle inspection update</span></div>
+        <div><strong>Pet groomer</strong><span>Pickup notification</span></div>
+        <div><strong>Beauty clinic</strong><span>Appointment reminder</span></div>
       </section>
     </main>
   );
@@ -1916,6 +2106,16 @@ function BusinessAdminView(props: {
         <Metric icon={ClipboardList} label="Ready pickup" value={props.jobs.filter((job) => job.status === 'ready_for_pickup').length.toString()} detail="Customers waiting" />
         <Metric icon={CreditCard} label="Unpaid jobs" value={props.jobs.filter((job) => !job.paid).length.toString()} detail="Collect when ready" />
         <Metric icon={CalendarClock} label="Roster replies" value={props.rosterShifts.filter((shift) => shift.response === 'accepted').length.toString()} detail={`${props.rosterShifts.filter((shift) => shift.response === 'sent').length} waiting`} />
+      </section>
+
+      <section className="panel wide product-story">
+        <PanelHeader icon={Sparkles} title={`${props.business.name} daily workflow`} action="Demo ready" />
+        <div className="story-steps">
+          <div><strong>1. Add customer</strong><span>Name, mobile, and job notes.</span></div>
+          <div><strong>2. Move status</strong><span>Staff tap simple buttons as work progresses.</span></div>
+          <div><strong>3. Preview update</strong><span>Customer message is generated and logged.</span></div>
+          <div><strong>4. Customer informed</strong><span>SMS sends when the provider is connected.</span></div>
+        </div>
       </section>
 
       <section className="panel create-job">
@@ -2411,11 +2611,13 @@ function SmsPreviewModal({
   preview,
   provider,
   onSend,
+  onCopy,
   onClose
 }: {
   preview: SmsPreview;
   provider: SmsProvider | null;
   onSend: () => void;
+  onCopy: () => void;
   onClose: () => void;
 }) {
   return (
@@ -2430,6 +2632,7 @@ function SmsPreviewModal({
         </div>
         <div className="modal-actions">
           <button onClick={onClose}>Continue without SMS</button>
+          <button onClick={onCopy}>Copy message</button>
           <button onClick={onSend}>Send SMS</button>
         </div>
       </div>
@@ -2521,6 +2724,13 @@ function JobDetail({
           <StatusBadge status={job.status} workflowStages={workflowStages} />
         </div>
       </div>
+
+      {!compact && (
+        <div className="customer-link-row">
+          <span>Customer tracking page</span>
+          <a href={`/track/${encodeURIComponent(job.id)}`}>Open customer view</a>
+        </div>
+      )}
 
       <div className={job.paid ? 'payment-panel paid' : 'payment-panel'}>
         <div>
