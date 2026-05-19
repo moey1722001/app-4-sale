@@ -41,6 +41,7 @@ VITE_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
 VITE_APPWRITE_PROJECT_ID=your-project-id
 VITE_APPWRITE_DATABASE_ID=verola
 VITE_APPWRITE_INVITE_FUNCTION_ID=send-company-invite-function-id
+VITE_APP_URL=https://your-verola-domain.com
 ```
 
 Build the backend from:
@@ -57,9 +58,11 @@ APPWRITE_ENDPOINT=https://syd.cloud.appwrite.io/v1 APPWRITE_PROJECT_ID=your-proj
 
 Invite emails:
 
-- In local demo mode, Verola opens a pre-filled email draft so you can send the invite from your mail app.
-- For automatic sending, deploy an Appwrite Function that sends the email and set `VITE_APPWRITE_INVITE_FUNCTION_ID` to that function ID.
-- The frontend sends only invite metadata and the invite URL to the function. Any email provider secrets must stay inside the Appwrite Function environment.
+- Invite links use `/invite/:token` and the base URL from `VITE_APP_URL`; if it is missing, the current origin is used.
+- In local demo mode, Verola stores invite tokens in browser storage so you can test the setup flow without exposing service keys.
+- For production, deploy an Appwrite Function that creates, looks up, sends, and accepts invites. Set `VITE_APPWRITE_INVITE_FUNCTION_ID` to that function ID.
+- If email sending is not configured, the UI shows: "Email sending is not configured. Copy and send the invite link manually."
+- The frontend sends only invite metadata, the generated token, and the invite URL to the function. Email provider secrets and Appwrite server keys must stay inside Appwrite Function environment variables.
 
 ## BYO SMS flow
 

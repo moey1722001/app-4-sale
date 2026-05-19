@@ -103,7 +103,7 @@ const smsProviders = ['clicksend', 'telnyx'];
 const smsSetupStatuses = ['not_configured', 'connected', 'failed'];
 const smsLogStatuses = ['pending', 'sent', 'delivered', 'failed'];
 const rosterStatuses = ['draft', 'sent', 'accepted', 'declined'];
-const inviteStatuses = ['sent', 'accepted', 'expired', 'revoked'];
+const inviteStatuses = ['pending', 'accepted', 'expired'];
 
 const collections = [
   {
@@ -137,18 +137,23 @@ const collections = [
     attributes: [
       { key: 'organisationId', type: 'string', size: 80, required: true },
       { key: 'businessName', type: 'string', size: 160, required: true },
+      { key: 'contactName', type: 'string', size: 160 },
       { key: 'adminEmail', type: 'string', size: 160, required: true },
+      { key: 'phone', type: 'string', size: 40 },
+      { key: 'tokenHash', type: 'string', size: 160, required: true },
       { key: 'role', type: 'enum', elements: ['business_admin', 'staff'], default: 'business_admin' },
-      { key: 'status', type: 'enum', elements: inviteStatuses, default: 'sent' },
+      { key: 'status', type: 'enum', elements: inviteStatuses, default: 'pending' },
       { key: 'invitedByUserId', type: 'string', size: 80 },
       { key: 'acceptedByUserId', type: 'string', size: 80 },
       { key: 'acceptedAt', type: 'datetime' },
+      { key: 'createdAt', type: 'datetime' },
       { key: 'expiresAt', type: 'datetime' }
     ],
     indexes: [
       { key: 'by_org', type: 'key', attributes: ['organisationId'] },
       { key: 'by_email', type: 'key', attributes: ['adminEmail'] },
-      { key: 'by_status', type: 'key', attributes: ['status'] }
+      { key: 'by_status', type: 'key', attributes: ['status'] },
+      { key: 'by_token_hash', type: 'unique', attributes: ['tokenHash'] }
     ]
   },
   {

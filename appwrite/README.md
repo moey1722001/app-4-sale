@@ -13,34 +13,45 @@ VITE_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
 VITE_APPWRITE_PROJECT_ID=your-project-id
 VITE_APPWRITE_DATABASE_ID=verola
 VITE_APPWRITE_INVITE_FUNCTION_ID=send-company-invite-function-id
+VITE_APP_URL=https://your-verola-domain.com
 ```
 
-## Company Invite Email Function
+## Company Invite And Setup Function
 
-The browser must not contain email provider secrets. To send company invites automatically, create an Appwrite Function and put the provider credentials in that function's environment.
+The browser must not contain service role keys or email provider secrets. To run company invites in production, create an Appwrite Function and put Appwrite server SDK credentials plus email provider credentials in that function's environment.
 
 Frontend payload sent to the function:
 
 ```json
 {
+  "action": "send_invite_email",
   "inviteId": "INV-123",
+  "token": "raw-token-visible-only-in-email-link",
   "businessId": "fresh-fold",
   "businessName": "Fresh Fold Laundry",
+  "contactName": "Ava Owner",
   "adminEmail": "owner@example.com",
+  "phone": "+61400000111",
   "role": "business_admin",
-  "inviteUrl": "https://your-app.com/invite/INV-123"
+  "inviteUrl": "https://your-app.com/invite/raw-token-visible-only-in-email-link",
+  "expiresAt": "2026-06-02T00:00:00.000Z"
 }
 ```
 
 The function should:
 
 - verify the caller is a platform super admin
-- create or update the `organisationInvites` record
-- send the email to `adminEmail`
+- create or update the `organisationInvites` record with a hash of the token, never the raw token
+- look up `/invite/:token` by hashing the provided token and comparing it with `tokenHash`
+- reject expired or already accepted invites
+- create or link the Appwrite Auth user
+- add the user to the organisation team with role `business_admin`
+- mark the invite as `accepted`
+- send the email to `adminEmail` only when email credentials are configured
 - never return provider secrets to the frontend
 - return a success response when the email has been accepted by the provider
 
-In local demo mode, Verola falls back to opening a pre-filled email draft if `VITE_APPWRITE_INVITE_FUNCTION_ID` is not configured.
+In local demo mode, Verola stores tokens in browser storage and falls back to a copyable setup link if `VITE_APPWRITE_INVITE_FUNCTION_ID` is not configured.
 
 ## Authentication And Roles
 
@@ -118,6 +129,39 @@ Permissions:
 - update colours and non-logo business settings: `business_admin`
 - update messaging status fields: Appwrite Functions only after provider credential validation
 - update `logoFileId`: platform super-admin function only
+
+### organisationInvites
+
+Secure business onboarding invites. Store only a server-side hash of the invite token; never store the raw token in a client-readable document.
+
+Attributes:
+
+- `organisationId` string required
+- `businessName` string required
+- `contactName` string
+- `adminEmail` string required
+- `phone` string
+- `tokenHash` string required
+- `role` enum `business_admin`, `staff`
+- `status` enum `pending`, `accepted`, `expired`
+- `invitedByUserId` string
+- `acceptedByUserId` string
+- `createdAt` datetime
+- `expiresAt` datetime
+- `acceptedAt` datetime
+
+Indexes:
+
+- key index on `organisationId`
+- key index on `adminEmail`
+- key index on `status`
+- unique index on `tokenHash`
+
+Permissions:
+
+- create/read/update: Appwrite invite function only
+- never grant public read by token
+- the frontend should call the invite function to look up, accept, or resend invites
 
 ### customers
 
@@ -356,6 +400,7 @@ Permissions:
 Recommended functions:
 
 - `provision-organisation`: creates an organisation document, Appwrite team, default SMS templates, default workflow stages, and first admin membership.
+- `manage-business-invite`: super-admin creates invites, sends invite email when configured, verifies `/invite/:token`, creates or links the business admin account, assigns the organisation team role, and marks the invite accepted.
 - `connect-sms-provider`: organisation-admin only function that validates ClickSend or Telnyx credentials, encrypts them server-side, stores only masked previews for display, and updates `organisations.messagingEnabled`.
 - `test-sms-provider`: organisation-admin only function that tests the saved provider without exposing secrets.
 - `disconnect-sms-provider`: organisation-admin only function that deletes stored provider credentials and marks messaging as `not_configured`.

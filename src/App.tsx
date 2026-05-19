@@ -31,7 +31,7 @@ import {
   X,
   Wrench
 } from 'lucide-react';
-import { appwriteInviteFunctionId, functions, hasAppwriteConfig } from './lib/appwrite';
+import { appBaseUrl, appwriteInviteFunctionId, functions, hasAppwriteConfig } from './lib/appwrite';
 
 type Portal = 'super' | 'admin' | 'staff';
 type UserRole = Portal;
@@ -39,6 +39,7 @@ type JobStatus = 'collected' | 'in_progress' | 'ready_for_pickup' | 'completed';
 type SmsProvider = 'clicksend' | 'telnyx';
 type SmsSetupStatus = 'not_configured' | 'connected' | 'failed';
 type ShiftResponse = 'draft' | 'sent' | 'accepted' | 'declined';
+type InviteStatus = 'pending' | 'accepted' | 'expired';
 
 type Business = {
   id: string;
@@ -61,6 +62,8 @@ type Business = {
   smsSetupStatus: SmsSetupStatus;
   maskedKeyPreview?: string;
   adminEmail?: string;
+  contactName?: string;
+  contactPhone?: string;
 };
 
 type AuthUser = {
@@ -72,12 +75,24 @@ type AuthUser = {
 
 type OrganisationInvite = {
   id: string;
+  token: string;
   businessId: string;
   businessName: string;
+  contactName: string;
   adminEmail: string;
+  phone: string;
   role: 'business_admin';
-  status: 'sent' | 'accepted';
+  status: InviteStatus;
   sentAt: string;
+  createdAt: string;
+  expiresAt: string;
+  acceptedAt?: string;
+};
+
+type SetupDraft = {
+  name: string;
+  password: string;
+  error: string;
 };
 
 type WorkflowStage = {
@@ -346,6 +361,10 @@ const portalPaths: Record<Portal, string> = {
   staff: '/staff'
 };
 
+const inviteStorageKey = 'verola.organisationInvites.v2';
+const businessStorageKey = 'verola.businesses.v2';
+const userStorageKey = 'verola.createdUsers.v2';
+
 const demoUsers: AuthUser[] = [
   { email: 'moey1722001@gmail.com', name: 'Platform Owner', role: 'super' },
   { email: 'owner@freshfold.test', name: 'Fresh Fold Admin', role: 'admin', businessId: 'fresh-fold' },
@@ -361,8 +380,8 @@ function portalFromPath(pathname: string): Portal {
   return 'admin';
 }
 
-function inviteIdFromPath(pathname: string) {
-  const match = pathname.match(/^\/invite\/([^/]+)/);
+function inviteTokenFromPath(pathname: string) {
+  const match = pathname.match(/^\/(?:invite|setup-business)\/([^/]+)/);
   return match ? decodeURIComponent(match[1]) : '';
 }
 
@@ -373,6 +392,62 @@ function getInitialPath() {
 
 function businessIdFromName(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `business-${Date.now()}`;
+}
+
+function debugInvite(message: string, details?: unknown) {
+  if (import.meta.env.DEV) {
+    console.info(`[invite] ${message}`, details ?? '');
+  }
+}
+
+function generateInviteToken() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next.toISOString();
+}
+
+function readStoredArray<T>(key: string, fallback: T[]) {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) as T[] : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredArray<T>(key: string, value: T[]) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function inviteStatus(invite: OrganisationInvite): InviteStatus {
+  if (invite.status === 'accepted') return 'accepted';
+  return new Date(invite.expiresAt).getTime() < Date.now() ? 'expired' : 'pending';
+}
+
+function normalizeInvite(invite: Partial<OrganisationInvite> & { id: string; businessId: string; businessName: string; adminEmail: string }): OrganisationInvite {
+  const createdAt = invite.createdAt || new Date().toISOString();
+  const token = invite.token || invite.id || generateInviteToken();
+  return {
+    id: invite.id || `INV-${Date.now()}`,
+    token,
+    businessId: invite.businessId,
+    businessName: invite.businessName,
+    contactName: invite.contactName || 'Business owner',
+    adminEmail: invite.adminEmail,
+    phone: invite.phone || '',
+    role: 'business_admin',
+    status: invite.status === 'accepted' ? 'accepted' : invite.status === 'expired' ? 'expired' : 'pending',
+    sentAt: invite.sentAt || 'Imported invite',
+    createdAt,
+    expiresAt: invite.expiresAt || addDays(new Date(createdAt), 14),
+    acceptedAt: invite.acceptedAt
+  };
 }
 
 function businessFromInvite(invite: OrganisationInvite): Business {
@@ -394,7 +469,9 @@ function businessFromInvite(invite: OrganisationInvite): Business {
     messagingEnabled: false,
     smsProvider: null,
     smsSenderName: sender,
-    smsSetupStatus: 'not_configured'
+    smsSetupStatus: 'not_configured',
+    contactName: invite.contactName,
+    contactPhone: invite.phone
   };
 }
 
@@ -406,22 +483,23 @@ function inviteFromUrl(inviteId: string): OrganisationInvite | undefined {
 
   return {
     id: inviteId,
+    token: inviteId,
     businessId: params.get('businessId') || businessIdFromName(businessName),
     businessName,
+    contactName: params.get('contact') || 'Business owner',
     adminEmail,
+    phone: params.get('phone') || '',
     role: 'business_admin',
-    status: 'sent',
-    sentAt: 'Invite link'
+    status: 'pending',
+    sentAt: 'Invite link',
+    createdAt: new Date().toISOString(),
+    expiresAt: addDays(new Date(), 14)
   };
 }
 
 function buildInviteUrl(invite: OrganisationInvite) {
-  const params = new URLSearchParams({
-    businessId: invite.businessId,
-    business: invite.businessName,
-    email: invite.adminEmail
-  });
-  return `${window.location.origin}/invite/${encodeURIComponent(invite.id)}?${params.toString()}`;
+  const baseUrl = appBaseUrl || window.location.origin;
+  return `${baseUrl}/invite/${encodeURIComponent(invite.token)}`;
 }
 
 async function passwordDigest(value: string) {
@@ -442,7 +520,7 @@ function App() {
   const [copiedInviteId, setCopiedInviteId] = useState('');
   const [inviteSendingId, setInviteSendingId] = useState('');
   const [inviteNotice, setInviteNotice] = useState('');
-  const [businesses, setBusinesses] = useState(initialBusinesses);
+  const [businesses, setBusinesses] = useState<Business[]>(() => readStoredArray(businessStorageKey, initialBusinesses));
   const [activeBusinessId, setActiveBusinessId] = useState('fresh-fold');
   const [jobs, setJobs] = useState(seedJobs);
   const [rosterShifts, setRosterShifts] = useState(seedRosterShifts);
@@ -453,13 +531,44 @@ function App() {
   const [newJobNotes, setNewJobNotes] = useState('');
   const [staffMembers, setStaffMembers] = useState(staff);
   const [newBusinessName, setNewBusinessName] = useState('');
+  const [newBusinessContactName, setNewBusinessContactName] = useState('');
   const [newBusinessIndustry, setNewBusinessIndustry] = useState('');
   const [newBusinessLocation, setNewBusinessLocation] = useState('');
+  const [newBusinessPhone, setNewBusinessPhone] = useState('');
   const [newBusinessAdminEmail, setNewBusinessAdminEmail] = useState('');
-  const [organisationInvites, setOrganisationInvites] = useState<OrganisationInvite[]>([
-    { id: 'INV-101', businessId: 'fresh-fold', businessName: 'Fresh Fold Laundry', adminEmail: 'owner@freshfold.test', role: 'business_admin', status: 'accepted', sentAt: 'Demo seed' },
-    { id: 'INV-102', businessId: 'rapid-auto', businessName: 'Rapid Auto Care', adminEmail: 'admin@rapidauto.test', role: 'business_admin', status: 'sent', sentAt: 'Demo seed' }
-  ]);
+  const [createdUsers, setCreatedUsers] = useState<AuthUser[]>(() => readStoredArray(userStorageKey, []));
+  const [setupDraft, setSetupDraft] = useState<SetupDraft>({ name: '', password: '', error: '' });
+  const [organisationInvites, setOrganisationInvites] = useState<OrganisationInvite[]>(() => readStoredArray<OrganisationInvite>(inviteStorageKey, [
+    {
+      id: 'INV-101',
+      token: 'demo-accepted-fresh-fold',
+      businessId: 'fresh-fold',
+      businessName: 'Fresh Fold Laundry',
+      contactName: 'Fresh Fold Owner',
+      adminEmail: 'owner@freshfold.test',
+      phone: '+61 400 000 101',
+      role: 'business_admin',
+      status: 'accepted',
+      sentAt: 'Demo seed',
+      createdAt: '2026-05-01T00:00:00.000Z',
+      expiresAt: '2026-06-01T00:00:00.000Z',
+      acceptedAt: '2026-05-01T00:00:00.000Z'
+    },
+    {
+      id: 'INV-102',
+      token: 'demo-pending-rapid-auto',
+      businessId: 'rapid-auto',
+      businessName: 'Rapid Auto Care',
+      contactName: 'Rapid Auto Admin',
+      adminEmail: 'admin@rapidauto.test',
+      phone: '+61 400 000 102',
+      role: 'business_admin',
+      status: 'pending',
+      sentAt: 'Demo seed',
+      createdAt: '2026-05-01T00:00:00.000Z',
+      expiresAt: '2026-06-01T00:00:00.000Z'
+    }
+  ]).map((invite) => normalizeInvite(invite)));
   const [rosterStaff, setRosterStaff] = useState(staff[2].name);
   const [rosterDate, setRosterDate] = useState('2026-05-28');
   const [rosterStart, setRosterStart] = useState('9:00 AM');
@@ -492,8 +601,52 @@ function App() {
     [activeBusiness.id, rosterShifts]
   );
   const selectedJob = visibleJobs.find((job) => job.id === selectedJobId) ?? visibleJobs[0];
-  const activeInviteId = inviteIdFromPath(currentPath);
-  const activeInvite = activeInviteId ? organisationInvites.find((invite) => invite.id === activeInviteId) ?? inviteFromUrl(activeInviteId) : undefined;
+  const activeInviteToken = inviteTokenFromPath(currentPath);
+  const activeInvite = activeInviteToken ? organisationInvites.find((invite) => invite.token === activeInviteToken) ?? inviteFromUrl(activeInviteToken) : undefined;
+
+  useEffect(() => {
+    writeStoredArray(businessStorageKey, businesses);
+  }, [businesses]);
+
+  useEffect(() => {
+    writeStoredArray(inviteStorageKey, organisationInvites);
+  }, [organisationInvites]);
+
+  useEffect(() => {
+    writeStoredArray(userStorageKey, createdUsers);
+  }, [createdUsers]);
+
+  useEffect(() => {
+    if (!activeInviteToken || activeInvite || !hasAppwriteConfig || !appwriteInviteFunctionId) return;
+
+    let cancelled = false;
+    debugInvite('invite lookup requested', { token: activeInviteToken });
+    functions.createExecution(
+      appwriteInviteFunctionId,
+      JSON.stringify({ action: 'lookup_invite', token: activeInviteToken }),
+      false,
+      '/',
+      ExecutionMethod.POST,
+      { 'content-type': 'application/json' }
+    )
+      .then((execution) => {
+        if (cancelled) return;
+        const responseBody = (execution as { responseBody?: string }).responseBody;
+        const payload = responseBody ? JSON.parse(responseBody) as { invite?: OrganisationInvite } : {};
+        if (payload.invite) {
+          const invite = normalizeInvite(payload.invite);
+          setOrganisationInvites((current) => [invite, ...current.filter((item) => item.token !== invite.token)]);
+          debugInvite('invite lookup success', { token: invite.token, businessId: invite.businessId });
+        } else {
+          debugInvite('invite lookup failure', { token: activeInviteToken });
+        }
+      })
+      .catch(() => debugInvite('invite lookup failure', { token: activeInviteToken }));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeInviteToken, activeInvite]);
 
   useEffect(() => {
     if (initialPath !== window.location.pathname) {
@@ -531,7 +684,7 @@ function App() {
 
   async function login() {
     const email = loginEmail.trim().toLowerCase();
-    const user = demoUsers.find((candidate) => candidate.email === email && candidate.role === loginRole);
+    const user = [...demoUsers, ...createdUsers].find((candidate) => candidate.email === email && candidate.role === loginRole);
     const passwordOk = user?.role === 'super' ? await passwordDigest(loginPassword) === demoSuperAdminPasswordHash : Boolean(loginPassword.trim());
     const organisationAvailable = !user?.businessId || businesses.some((business) => business.id === user.businessId && business.active);
 
@@ -565,6 +718,7 @@ function App() {
     await navigator.clipboard?.writeText(url);
     setCopiedInviteId(inviteId);
     setInviteNotice('Invite link copied.');
+    debugInvite('invite URL copied', { token: invite.token, businessId: invite.businessId, url });
   }
 
   async function sendInviteEmailForInvite(invite: OrganisationInvite) {
@@ -589,12 +743,17 @@ function App() {
         await functions.createExecution(
           appwriteInviteFunctionId,
           JSON.stringify({
+            action: 'send_invite_email',
             inviteId: invite.id,
+            token: invite.token,
             businessId: invite.businessId,
             businessName: invite.businessName,
+            contactName: invite.contactName,
             adminEmail: invite.adminEmail,
+            phone: invite.phone,
             role: invite.role,
-            inviteUrl: url
+            inviteUrl: url,
+            expiresAt: invite.expiresAt
           }),
           false,
           '/',
@@ -603,12 +762,14 @@ function App() {
         );
         setOrganisationInvites((current) => current.map((item) => (item.id === invite.id ? { ...item, sentAt: 'Email sent just now' } : item)));
         setInviteNotice(`Invite email sent to ${invite.adminEmail}.`);
+        debugInvite('invite email sent', { token: invite.token, businessId: invite.businessId });
         return;
       }
 
-      window.location.href = `mailto:${encodeURIComponent(invite.adminEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      setOrganisationInvites((current) => current.map((item) => (item.id === invite.id ? { ...item, sentAt: 'Email draft opened' } : item)));
-      setInviteNotice('Email draft opened. Add VITE_APPWRITE_INVITE_FUNCTION_ID to send automatically from Appwrite.');
+      await navigator.clipboard?.writeText(`${subject}\n\n${body}`);
+      setCopiedInviteId(invite.id);
+      setInviteNotice('Email sending is not configured. Copy and send the invite link manually.');
+      debugInvite('email sending unavailable, invite copied', { token: invite.token, businessId: invite.businessId });
     } catch {
       await navigator.clipboard?.writeText(url);
       setCopiedInviteId(invite.id);
@@ -625,34 +786,85 @@ function App() {
     await sendInviteEmailForInvite(invite);
   }
 
-  function acceptInvite(inviteId: string) {
-    const invite = organisationInvites.find((item) => item.id === inviteId && item.status === 'sent') ?? inviteFromUrl(inviteId);
+  async function completeInviteSetup(inviteToken: string) {
+    const invite = organisationInvites.find((item) => item.token === inviteToken) ?? inviteFromUrl(inviteToken);
     if (!invite) return;
+    const status = inviteStatus(invite);
+    const adminName = setupDraft.name.trim();
+    const password = setupDraft.password.trim();
+
+    debugInvite(status === 'pending' ? 'invite lookup success' : 'invite lookup blocked', {
+      token: invite.token,
+      businessId: invite.businessId,
+      status
+    });
+
+    if (status !== 'pending') {
+      setSetupDraft((current) => ({ ...current, error: status === 'accepted' ? 'This invite has already been accepted.' : 'This invite has expired.' }));
+      return;
+    }
+
+    if (!adminName || password.length < 8) {
+      setSetupDraft((current) => ({ ...current, error: 'Enter your name and a password with at least 8 characters.' }));
+      return;
+    }
+
+    try {
+      if (hasAppwriteConfig && appwriteInviteFunctionId) {
+        await functions.createExecution(
+          appwriteInviteFunctionId,
+          JSON.stringify({
+            action: 'accept_invite',
+            token: invite.token,
+            adminName,
+            adminEmail: invite.adminEmail,
+            password,
+            businessId: invite.businessId
+          }),
+          false,
+          '/',
+          ExecutionMethod.POST,
+          { 'content-type': 'application/json' }
+        );
+      }
+    } catch {
+      setSetupDraft((current) => ({ ...current, error: 'Setup could not be completed. Please try again or ask for a new invite.' }));
+      debugInvite('invite accept failed', { token: invite.token, businessId: invite.businessId });
+      return;
+    }
 
     setOrganisationInvites((current) => {
-      const exists = current.some((item) => item.id === inviteId);
-      if (exists) return current.map((item) => (item.id === inviteId ? { ...item, status: 'accepted' } : item));
+      const exists = current.some((item) => item.token === inviteToken);
+      if (exists) return current.map((item) => (item.token === inviteToken ? { ...item, status: 'accepted', acceptedAt: new Date().toISOString() } : item));
       return [{ ...invite, status: 'accepted', sentAt: 'Accepted from invite link' }, ...current];
     });
     setBusinesses((current) => (current.some((business) => business.id === invite.businessId) ? current : [businessFromInvite(invite), ...current]));
-    setAuthUser({
+    const user: AuthUser = {
       email: invite.adminEmail,
-      name: `${invite.businessName} Admin`,
+      name: adminName,
       role: 'admin',
       businessId: invite.businessId
-    });
+    };
+    setCreatedUsers((current) => [user, ...current.filter((candidate) => candidate.email !== user.email)]);
+    setAuthUser(user);
     setActiveBusinessId(invite.businessId);
     setPortal('admin');
     setLoginError('');
+    setSetupDraft({ name: '', password: '', error: '' });
+    debugInvite('invite accepted and account linked to organisation', { token: invite.token, businessId: invite.businessId, email: invite.adminEmail });
     window.history.replaceState({}, '', '/business-admin');
     setCurrentPath('/business-admin');
   }
 
   async function addBusiness() {
     const name = newBusinessName.trim();
+    const contactName = newBusinessContactName.trim();
+    const email = newBusinessAdminEmail.trim().toLowerCase();
     if (!name) return;
 
     const id = businessIdFromName(name);
+    const now = new Date();
+    const token = generateInviteToken();
     const business: Business = {
       id,
       name,
@@ -666,30 +878,41 @@ function App() {
       primary: '#4f46e5',
       accent: '#06b6d4',
       sender: name.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 10) || 'VEROLA',
-      adminEmail: newBusinessAdminEmail.trim().toLowerCase(),
+      adminEmail: email,
+      contactName,
+      contactPhone: newBusinessPhone.trim(),
       messagingEnabled: false,
       smsProvider: null,
       smsSenderName: name.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 10) || 'VEROLA',
       smsSetupStatus: 'not_configured'
     };
     const invite: OrganisationInvite = {
-      id: `INV-${103 + organisationInvites.length}`,
+      id: `INV-${Date.now()}`,
+      token,
       businessId: business.id,
       businessName: business.name,
+      contactName: contactName || 'Business owner',
       adminEmail: business.adminEmail ?? '',
+      phone: newBusinessPhone.trim(),
       role: 'business_admin',
-      status: 'sent',
-      sentAt: 'Preparing email'
+      status: 'pending',
+      sentAt: 'Invite created',
+      createdAt: now.toISOString(),
+      expiresAt: addDays(now, 14)
     };
 
     setBusinesses((current) => [business, ...current]);
     if (business.adminEmail) {
       setOrganisationInvites((current) => [invite, ...current]);
     }
+    debugInvite('invite token created', { token: invite.token, businessId: business.id, email: invite.adminEmail, expiresAt: invite.expiresAt });
+    debugInvite('invite URL generated', { token: invite.token, url: buildInviteUrl(invite) });
     setActiveBusinessId(business.id);
     setNewBusinessName('');
+    setNewBusinessContactName('');
     setNewBusinessIndustry('');
     setNewBusinessLocation('');
+    setNewBusinessPhone('');
     setNewBusinessAdminEmail('');
     if (business.adminEmail) await sendInviteEmailForInvite(invite);
   }
@@ -992,8 +1215,15 @@ function App() {
     );
   }
 
-  if (activeInviteId) {
-    return <InviteAcceptView invite={activeInvite} acceptInvite={acceptInvite} />;
+  if (activeInviteToken) {
+    return (
+      <InviteAcceptView
+        invite={activeInvite}
+        setupDraft={setupDraft}
+        setSetupDraft={setSetupDraft}
+        completeInviteSetup={completeInviteSetup}
+      />
+    );
   }
 
   if (!authUser) {
@@ -1082,10 +1312,14 @@ function App() {
             activeBusiness={activeBusiness}
             newBusinessName={newBusinessName}
             setNewBusinessName={setNewBusinessName}
+            newBusinessContactName={newBusinessContactName}
+            setNewBusinessContactName={setNewBusinessContactName}
             newBusinessIndustry={newBusinessIndustry}
             setNewBusinessIndustry={setNewBusinessIndustry}
             newBusinessLocation={newBusinessLocation}
             setNewBusinessLocation={setNewBusinessLocation}
+            newBusinessPhone={newBusinessPhone}
+            setNewBusinessPhone={setNewBusinessPhone}
             newBusinessAdminEmail={newBusinessAdminEmail}
             setNewBusinessAdminEmail={setNewBusinessAdminEmail}
             organisationInvites={organisationInvites}
@@ -1175,10 +1409,14 @@ function SuperAdminView({
   activeBusiness,
   newBusinessName,
   setNewBusinessName,
+  newBusinessContactName,
+  setNewBusinessContactName,
   newBusinessIndustry,
   setNewBusinessIndustry,
   newBusinessLocation,
   setNewBusinessLocation,
+  newBusinessPhone,
+  setNewBusinessPhone,
   newBusinessAdminEmail,
   setNewBusinessAdminEmail,
   organisationInvites,
@@ -1197,10 +1435,14 @@ function SuperAdminView({
   activeBusiness: Business;
   newBusinessName: string;
   setNewBusinessName: (value: string) => void;
+  newBusinessContactName: string;
+  setNewBusinessContactName: (value: string) => void;
   newBusinessIndustry: string;
   setNewBusinessIndustry: (value: string) => void;
   newBusinessLocation: string;
   setNewBusinessLocation: (value: string) => void;
+  newBusinessPhone: string;
+  setNewBusinessPhone: (value: string) => void;
   newBusinessAdminEmail: string;
   setNewBusinessAdminEmail: (value: string) => void;
   organisationInvites: OrganisationInvite[];
@@ -1229,12 +1471,14 @@ function SuperAdminView({
         <PanelHeader icon={Settings} title="Business Management" />
         <div className="business-create-form">
           <input value={newBusinessName} onChange={(event) => setNewBusinessName(event.target.value)} placeholder="Business name" />
+          <input value={newBusinessContactName} onChange={(event) => setNewBusinessContactName(event.target.value)} placeholder="Contact name" />
           <input value={newBusinessIndustry} onChange={(event) => setNewBusinessIndustry(event.target.value)} placeholder="Industry" />
           <input value={newBusinessLocation} onChange={(event) => setNewBusinessLocation(event.target.value)} placeholder="Location" />
+          <input value={newBusinessPhone} onChange={(event) => setNewBusinessPhone(event.target.value)} placeholder="Phone" />
           <input value={newBusinessAdminEmail} onChange={(event) => setNewBusinessAdminEmail(event.target.value)} placeholder="Admin email invite" type="email" />
           <button onClick={addBusiness} disabled={!newBusinessName.trim() || !newBusinessAdminEmail.trim()}>
             <Plus size={17} />
-            Invite business
+            Send invite
           </button>
         </div>
         <div className="tenant-list">
@@ -1280,22 +1524,27 @@ function SuperAdminView({
       </section>
 
       <section className="panel">
-        <PanelHeader icon={Mail} title="Company Invites" action={`${organisationInvites.filter((invite) => invite.status === 'sent').length} pending`} />
+        <PanelHeader icon={Mail} title="Company Invites" action={`${organisationInvites.filter((invite) => inviteStatus(invite) === 'pending').length} pending`} />
         {inviteNotice && <div className="inline-notice">{inviteNotice}</div>}
         <div className="invite-list">
           {organisationInvites.map((invite) => (
             <div className="invite-row" key={invite.id}>
               <div>
                 <strong>{invite.businessName}</strong>
+                <span>{invite.contactName} · {invite.phone || 'No phone yet'}</span>
                 <span>{invite.adminEmail}</span>
-                <span>Email: {invite.sentAt}</span>
+                <span>Expires: {new Date(invite.expiresAt).toLocaleDateString()}</span>
                 <a href={buildInviteUrl(invite)}>{buildInviteUrl(invite)}</a>
               </div>
               <div className="invite-actions">
-                <span className={invite.status === 'accepted' ? 'status-dot active' : 'status-dot pending'}>{invite.status === 'accepted' ? 'Accepted' : 'Sent'}</span>
-                <button onClick={() => sendInviteEmail(invite.id)} disabled={inviteSendingId === invite.id}>
-                  {inviteSendingId === invite.id ? 'Sending' : invite.sentAt.includes('sent') ? 'Resend email' : 'Send email'}
-                </button>
+                <span className={inviteStatus(invite) === 'accepted' ? 'status-dot active' : inviteStatus(invite) === 'expired' ? 'status-dot paused' : 'status-dot pending'}>{inviteStatus(invite)}</span>
+                {appwriteInviteFunctionId ? (
+                  <button onClick={() => sendInviteEmail(invite.id)} disabled={inviteSendingId === invite.id || inviteStatus(invite) !== 'pending'}>
+                    {inviteSendingId === invite.id ? 'Sending' : invite.sentAt.includes('sent') ? 'Resend email' : 'Send email'}
+                  </button>
+                ) : (
+                  <span className="invite-hint">Email not configured</span>
+                )}
                 <button onClick={() => copyInviteLink(invite.id)}>{copiedInviteId === invite.id ? 'Copied' : 'Copy link'}</button>
               </div>
             </div>
@@ -1403,7 +1652,25 @@ function LoginView({
   );
 }
 
-function InviteAcceptView({ invite, acceptInvite }: { invite?: OrganisationInvite; acceptInvite: (inviteId: string) => void }) {
+function InviteAcceptView({
+  invite,
+  setupDraft,
+  setSetupDraft,
+  completeInviteSetup
+}: {
+  invite?: OrganisationInvite;
+  setupDraft: SetupDraft;
+  setSetupDraft: (draft: SetupDraft | ((current: SetupDraft) => SetupDraft)) => void;
+  completeInviteSetup: (token: string) => void;
+}) {
+  const status = invite ? inviteStatus(invite) : undefined;
+  const unavailableTitle = status === 'accepted' ? 'Invite already used' : status === 'expired' ? 'Invite expired' : 'Link unavailable';
+  const unavailableCopy = status === 'accepted'
+    ? 'This setup link has already been accepted. Sign in with the business admin account instead.'
+    : status === 'expired'
+      ? 'This setup link has expired. Ask the platform owner to send a new invite.'
+      : 'This invite token is invalid or could not be found.';
+
   return (
     <main className="login-screen">
       <section className="login-panel">
@@ -1414,22 +1681,29 @@ function InviteAcceptView({ invite, acceptInvite }: { invite?: OrganisationInvit
             <span>Company setup invite</span>
           </div>
         </div>
-        {invite ? (
+        {invite && status === 'pending' ? (
           <>
             <div>
-              <span className="eyebrow">Business Admin Invite</span>
+              <span className="eyebrow">Business Setup</span>
               <h1>{invite.businessName}</h1>
-              <p className="login-copy">{invite.adminEmail} has been invited to set up this business dashboard.</p>
+              <p className="login-copy">Confirm the details, create your admin login, and Verola will open your business dashboard.</p>
             </div>
             <div className="login-help">
-              <strong>Access assigned</strong>
+              <strong>Invite verified</strong>
               <span>Dashboard: Business Admin</span>
               <span>Organisation: {invite.businessName}</span>
-              <span>Status: {invite.status === 'accepted' ? 'Already accepted' : 'Ready to accept'}</span>
+              <span>Email: {invite.adminEmail}</span>
+              <span>Expires: {new Date(invite.expiresAt).toLocaleDateString()}</span>
             </div>
-            <button className="primary-action" disabled={invite.status === 'accepted'} onClick={() => acceptInvite(invite.id)}>
+            <div className="login-form">
+              <input value={invite.businessName} readOnly aria-label="Business name" />
+              <input value={setupDraft.name} onChange={(event) => setSetupDraft((current) => ({ ...current, name: event.target.value, error: '' }))} placeholder="Your name" />
+              <input value={setupDraft.password} onChange={(event) => setSetupDraft((current) => ({ ...current, password: event.target.value, error: '' }))} placeholder="Create password" type="password" />
+            </div>
+            {setupDraft.error && <p className="login-error">{setupDraft.error}</p>}
+            <button className="primary-action" onClick={() => completeInviteSetup(invite.token)}>
               <CheckCircle2 size={18} />
-              {invite.status === 'accepted' ? 'Invite already accepted' : 'Accept invite'}
+              Complete setup
             </button>
             <a className="login-link" href="/login">Back to login</a>
           </>
@@ -1437,8 +1711,8 @@ function InviteAcceptView({ invite, acceptInvite }: { invite?: OrganisationInvit
           <>
             <div>
               <span className="eyebrow">Invite not found</span>
-              <h1>Link unavailable</h1>
-              <p className="login-copy">This invite link is invalid or no longer exists in the local demo session.</p>
+              <h1>{unavailableTitle}</h1>
+              <p className="login-copy">{unavailableCopy}</p>
             </div>
             <a className="login-link" href="/login">Back to login</a>
           </>

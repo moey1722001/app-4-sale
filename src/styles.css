@@ -693,6 +693,11 @@ h1 {
   font-weight: 900;
 }
 
+.invite-hint {
+  max-width: 170px;
+  text-align: right;
+}
+
 .roster-planner {
   display: grid;
   gap: 16px;
@@ -1457,7 +1462,7 @@ h1 {
 }
 
 .business-create-form {
-  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .business-create-form input,
@@ -1485,6 +1490,10 @@ h1 {
   background: var(--brand);
   font-weight: 900;
   cursor: pointer;
+}
+
+.business-create-form button {
+  grid-column: span 3;
 }
 
 .logo-upload {
@@ -1786,6 +1795,10 @@ h1 {
   .progress-readonly,
   .status-buttons {
     grid-template-columns: 1fr;
+  }
+
+  .business-create-form button {
+    grid-column: auto;
   }
 
   .roster-toolbar {
