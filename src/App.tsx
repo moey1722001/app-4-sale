@@ -366,6 +366,11 @@ function inviteIdFromPath(pathname: string) {
   return match ? decodeURIComponent(match[1]) : '';
 }
 
+function getInitialPath() {
+  const redirectPath = new URLSearchParams(window.location.search).get('redirect');
+  return redirectPath?.startsWith('/') ? redirectPath : window.location.pathname;
+}
+
 async function passwordDigest(value: string) {
   const data = new TextEncoder().encode(value);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -373,13 +378,14 @@ async function passwordDigest(value: string) {
 }
 
 function App() {
-  const [portal, setPortal] = useState<Portal>(() => portalFromPath(window.location.pathname));
+  const initialPath = getInitialPath();
+  const [portal, setPortal] = useState<Portal>(() => portalFromPath(initialPath));
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [loginRole, setLoginRole] = useState<UserRole>(() => portalFromPath(window.location.pathname));
+  const [loginRole, setLoginRole] = useState<UserRole>(() => portalFromPath(initialPath));
   const [loginEmail, setLoginEmail] = useState('moey1722001@gmail.com');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
-  const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const [currentPath, setCurrentPath] = useState(initialPath);
   const [copiedInviteId, setCopiedInviteId] = useState('');
   const [inviteSendingId, setInviteSendingId] = useState('');
   const [inviteNotice, setInviteNotice] = useState('');
@@ -437,13 +443,16 @@ function App() {
   const activeInvite = activeInviteId ? organisationInvites.find((invite) => invite.id === activeInviteId) : undefined;
 
   useEffect(() => {
+    if (initialPath !== window.location.pathname) {
+      window.history.replaceState({}, '', initialPath);
+    }
     const handlePopState = () => {
       setCurrentPath(window.location.pathname);
       setPortal(portalFromPath(window.location.pathname));
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [initialPath]);
 
   useEffect(() => {
     if (!authUser) return;
