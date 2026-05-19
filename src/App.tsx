@@ -371,6 +371,59 @@ function getInitialPath() {
   return redirectPath?.startsWith('/') ? redirectPath : window.location.pathname;
 }
 
+function businessIdFromName(name: string) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `business-${Date.now()}`;
+}
+
+function businessFromInvite(invite: OrganisationInvite): Business {
+  const sender = invite.businessName.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 10) || 'VEROLA';
+  return {
+    id: invite.businessId,
+    name: invite.businessName,
+    industry: 'Service business',
+    location: 'New location',
+    plan: 'Starter',
+    active: true,
+    staff: 1,
+    sms: 0,
+    jobs: 0,
+    primary: '#4f46e5',
+    accent: '#06b6d4',
+    sender,
+    adminEmail: invite.adminEmail,
+    messagingEnabled: false,
+    smsProvider: null,
+    smsSenderName: sender,
+    smsSetupStatus: 'not_configured'
+  };
+}
+
+function inviteFromUrl(inviteId: string): OrganisationInvite | undefined {
+  const params = new URLSearchParams(window.location.search);
+  const businessName = params.get('business');
+  const adminEmail = params.get('email');
+  if (!inviteId || !businessName || !adminEmail) return undefined;
+
+  return {
+    id: inviteId,
+    businessId: params.get('businessId') || businessIdFromName(businessName),
+    businessName,
+    adminEmail,
+    role: 'business_admin',
+    status: 'sent',
+    sentAt: 'Invite link'
+  };
+}
+
+function buildInviteUrl(invite: OrganisationInvite) {
+  const params = new URLSearchParams({
+    businessId: invite.businessId,
+    business: invite.businessName,
+    email: invite.adminEmail
+  });
+  return `${window.location.origin}/invite/${encodeURIComponent(invite.id)}?${params.toString()}`;
+}
+
 async function passwordDigest(value: string) {
   const data = new TextEncoder().encode(value);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -440,7 +493,7 @@ function App() {
   );
   const selectedJob = visibleJobs.find((job) => job.id === selectedJobId) ?? visibleJobs[0];
   const activeInviteId = inviteIdFromPath(currentPath);
-  const activeInvite = activeInviteId ? organisationInvites.find((invite) => invite.id === activeInviteId) : undefined;
+  const activeInvite = activeInviteId ? organisationInvites.find((invite) => invite.id === activeInviteId) ?? inviteFromUrl(activeInviteId) : undefined;
 
   useEffect(() => {
     if (initialPath !== window.location.pathname) {
@@ -505,19 +558,17 @@ function App() {
     setCurrentPath('/login');
   }
 
-  function buildInviteUrl(inviteId: string) {
-    return `${window.location.origin}/invite/${encodeURIComponent(inviteId)}`;
-  }
-
   async function copyInviteLink(inviteId: string) {
-    const url = buildInviteUrl(inviteId);
+    const invite = organisationInvites.find((item) => item.id === inviteId);
+    if (!invite) return;
+    const url = buildInviteUrl(invite);
     await navigator.clipboard?.writeText(url);
     setCopiedInviteId(inviteId);
     setInviteNotice('Invite link copied.');
   }
 
   async function sendInviteEmailForInvite(invite: OrganisationInvite) {
-    const url = buildInviteUrl(invite.id);
+    const url = buildInviteUrl(invite);
     const subject = `Set up ${invite.businessName} in Verola`;
     const body = [
       `Hi,`,
@@ -575,10 +626,15 @@ function App() {
   }
 
   function acceptInvite(inviteId: string) {
-    const invite = organisationInvites.find((item) => item.id === inviteId && item.status === 'sent');
+    const invite = organisationInvites.find((item) => item.id === inviteId && item.status === 'sent') ?? inviteFromUrl(inviteId);
     if (!invite) return;
 
-    setOrganisationInvites((current) => current.map((item) => (item.id === inviteId ? { ...item, status: 'accepted' } : item)));
+    setOrganisationInvites((current) => {
+      const exists = current.some((item) => item.id === inviteId);
+      if (exists) return current.map((item) => (item.id === inviteId ? { ...item, status: 'accepted' } : item));
+      return [{ ...invite, status: 'accepted', sentAt: 'Accepted from invite link' }, ...current];
+    });
+    setBusinesses((current) => (current.some((business) => business.id === invite.businessId) ? current : [businessFromInvite(invite), ...current]));
     setAuthUser({
       email: invite.adminEmail,
       name: `${invite.businessName} Admin`,
@@ -596,7 +652,7 @@ function App() {
     const name = newBusinessName.trim();
     if (!name) return;
 
-    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `business-${businesses.length + 1}`;
+    const id = businessIdFromName(name);
     const business: Business = {
       id,
       name,
@@ -1233,7 +1289,7 @@ function SuperAdminView({
                 <strong>{invite.businessName}</strong>
                 <span>{invite.adminEmail}</span>
                 <span>Email: {invite.sentAt}</span>
-                <a href={`/invite/${encodeURIComponent(invite.id)}`}>{`${window.location.origin}/invite/${encodeURIComponent(invite.id)}`}</a>
+                <a href={buildInviteUrl(invite)}>{buildInviteUrl(invite)}</a>
               </div>
               <div className="invite-actions">
                 <span className={invite.status === 'accepted' ? 'status-dot active' : 'status-dot pending'}>{invite.status === 'accepted' ? 'Accepted' : 'Sent'}</span>
