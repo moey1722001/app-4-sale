@@ -32,6 +32,7 @@ import {
   Wrench
 } from 'lucide-react';
 import { appBaseUrl, appwriteInviteFunctionId, functions, hasAppwriteConfig } from './lib/appwrite';
+import { BrandProvider, OrganisationBrand, platformBrand, useBranding } from './lib/branding';
 
 type Portal = 'super' | 'admin' | 'staff';
 type UserRole = Portal;
@@ -475,6 +476,18 @@ function businessFromInvite(invite: OrganisationInvite): Business {
   };
 }
 
+function brandFromBusiness(business?: Business): OrganisationBrand {
+  if (!business) return platformBrand;
+  return {
+    name: business.name,
+    tagline: `${business.industry} · ${business.location}`,
+    logoUrl: business.logoUrl,
+    primary: business.primary,
+    accent: business.accent,
+    poweredBy: 'Verola'
+  };
+}
+
 function inviteFromUrl(inviteId: string): OrganisationInvite | undefined {
   const params = new URLSearchParams(window.location.search);
   const businessName = params.get('business');
@@ -506,6 +519,15 @@ async function passwordDigest(value: string) {
   const data = new TextEncoder().encode(value);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(hashBuffer)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Could not read logo file.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function App() {
@@ -601,8 +623,16 @@ function App() {
     [activeBusiness.id, rosterShifts]
   );
   const selectedJob = visibleJobs.find((job) => job.id === selectedJobId) ?? visibleJobs[0];
+  const loginUser = [...demoUsers, ...createdUsers].find((candidate) => candidate.email === loginEmail.trim().toLowerCase() && candidate.role === loginRole);
+  const loginBusiness = loginUser?.businessId ? businesses.find((business) => business.id === loginUser.businessId) : undefined;
+  const activeBrand = brandFromBusiness(activeBusiness);
+  const loginBrand = loginRole === 'super' ? platformBrand : brandFromBusiness(loginBusiness);
   const activeInviteToken = inviteTokenFromPath(currentPath);
   const activeInvite = activeInviteToken ? organisationInvites.find((invite) => invite.token === activeInviteToken) ?? inviteFromUrl(activeInviteToken) : undefined;
+  const inviteBusiness = activeInvite ? businesses.find((business) => business.id === activeInvite.businessId) ?? businessFromInvite(activeInvite) : undefined;
+  const customerTrackJobId = currentPath.match(/^\/track\/([^/]+)/)?.[1] ? decodeURIComponent(currentPath.match(/^\/track\/([^/]+)/)?.[1] ?? '') : '';
+  const customerTrackJob = customerTrackJobId ? jobs.find((job) => job.id === customerTrackJobId) : undefined;
+  const customerTrackBusiness = customerTrackJob ? businesses.find((business) => business.id === customerTrackJob.businessId) : undefined;
 
   useEffect(() => {
     writeStoredArray(businessStorageKey, businesses);
@@ -753,7 +783,8 @@ function App() {
             phone: invite.phone,
             role: invite.role,
             inviteUrl: url,
-            expiresAt: invite.expiresAt
+            expiresAt: invite.expiresAt,
+            logoUrl: businesses.find((business) => business.id === invite.businessId)?.logoUrl
           }),
           false,
           '/',
@@ -784,6 +815,11 @@ function App() {
     const invite = organisationInvites.find((item) => item.id === inviteId);
     if (!invite) return;
     await sendInviteEmailForInvite(invite);
+  }
+
+  function updateBusinessBrand(businessId: string, patch: Partial<Pick<Business, 'primary' | 'accent'>>) {
+    setBusinesses((current) => current.map((business) => (business.id === businessId ? { ...business, ...patch } : business)));
+    setInviteNotice('Brand colours updated for this organisation.');
   }
 
   async function completeInviteSetup(inviteToken: string) {
@@ -936,19 +972,44 @@ function App() {
     setActiveBusinessId(nextActiveBusiness.id);
   }
 
-  function uploadBusinessLogo(businessId: string, file?: File) {
+  async function uploadBusinessLogo(businessId: string, file?: File) {
     if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setInviteNotice('Logo upload failed. Use a PNG, JPG, SVG, or WebP image.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setInviteNotice('Logo upload failed. Choose an image smaller than 2 MB.');
+      return;
+    }
+    const logoUrl = await fileToDataUrl(file);
     setBusinesses((current) =>
       current.map((business) =>
         business.id === businessId
           ? {
               ...business,
               logoName: file.name,
-              logoUrl: URL.createObjectURL(file)
+              logoUrl
             }
           : business
       )
     );
+    setInviteNotice('Logo saved. It will appear across this organisation portal.');
+  }
+
+  function removeBusinessLogo(businessId: string) {
+    setBusinesses((current) =>
+      current.map((business) =>
+        business.id === businessId
+          ? {
+              ...business,
+              logoName: undefined,
+              logoUrl: undefined
+            }
+          : business
+      )
+    );
+    setInviteNotice('Logo removed. This business now uses the Verola fallback mark.');
   }
 
   function getProviderDraft(business: Business) {
@@ -1217,38 +1278,51 @@ function App() {
 
   if (activeInviteToken) {
     return (
-      <InviteAcceptView
-        invite={activeInvite}
-        setupDraft={setupDraft}
-        setSetupDraft={setSetupDraft}
-        completeInviteSetup={completeInviteSetup}
-      />
+      <BrandProvider brand={brandFromBusiness(inviteBusiness)}>
+        <InviteAcceptView
+          invite={activeInvite}
+          setupDraft={setupDraft}
+          setSetupDraft={setSetupDraft}
+          completeInviteSetup={completeInviteSetup}
+        />
+      </BrandProvider>
+    );
+  }
+
+  if (customerTrackJobId) {
+    return (
+      <BrandProvider brand={brandFromBusiness(customerTrackBusiness)}>
+        <CustomerStatusView job={customerTrackJob} business={customerTrackBusiness} />
+      </BrandProvider>
     );
   }
 
   if (!authUser) {
     return (
-      <LoginView
-        role={loginRole}
-        setRole={setLoginRole}
-        email={loginEmail}
-        setEmail={setLoginEmail}
-        password={loginPassword}
-        setPassword={setLoginPassword}
-        error={loginError}
-        login={login}
-      />
+      <BrandProvider brand={loginBrand}>
+        <LoginView
+          role={loginRole}
+          setRole={setLoginRole}
+          email={loginEmail}
+          setEmail={setLoginEmail}
+          password={loginPassword}
+          setPassword={setLoginPassword}
+          error={loginError}
+          login={login}
+        />
+      </BrandProvider>
     );
   }
 
   return (
-    <div className="app-shell" style={{ '--brand': activeBusiness.primary, '--accent': activeBusiness.accent } as React.CSSProperties}>
+    <BrandProvider brand={activeBrand}>
+    <div className="app-shell" style={{ '--brand': activeBrand.primary, '--accent': activeBrand.accent } as React.CSSProperties}>
       <aside className="sidebar">
         <div className="brand-lockup">
-          <div className="logo-mark">V</div>
+          <BusinessLogo business={activeBusiness} className="nav-logo" />
           <div>
-            <strong>Verola</strong>
-            <span>Workflow SMS SaaS</span>
+            <strong>{activeBrand.name}</strong>
+            <span>Powered by {activeBrand.poweredBy}</span>
           </div>
         </div>
 
@@ -1266,6 +1340,7 @@ function App() {
 
         <div className="tenant-card">
           <span className="eyebrow">White-label tenant</span>
+          <BusinessLogo business={activeBusiness} className="tenant-logo" />
           <strong>{activeBusiness.name}</strong>
           <p>{activeBusiness.industry} · {activeBusiness.location}</p>
           <div className="brand-palette">
@@ -1331,6 +1406,8 @@ function App() {
             addBusiness={addBusiness}
             deleteBusiness={deleteBusiness}
             uploadBusinessLogo={uploadBusinessLogo}
+            removeBusinessLogo={removeBusinessLogo}
+            updateBusinessBrand={updateBusinessBrand}
           />
         )}
 
@@ -1399,6 +1476,7 @@ function App() {
         )}
       </main>
     </div>
+    </BrandProvider>
   );
 }
 
@@ -1427,7 +1505,9 @@ function SuperAdminView({
   sendInviteEmail,
   addBusiness,
   deleteBusiness,
-  uploadBusinessLogo
+  uploadBusinessLogo,
+  removeBusinessLogo,
+  updateBusinessBrand
 }: {
   businesses: Business[];
   activeBusinessId: string;
@@ -1454,6 +1534,8 @@ function SuperAdminView({
   addBusiness: () => void | Promise<void>;
   deleteBusiness: (businessId: string) => void;
   uploadBusinessLogo: (businessId: string, file?: File) => void;
+  removeBusinessLogo: (businessId: string) => void;
+  updateBusinessBrand: (businessId: string, patch: Partial<Pick<Business, 'primary' | 'accent'>>) => void;
 }) {
   const activeTenants = tenants.filter((tenant) => tenant.active).length;
   const connectedMessagingTenants = tenants.filter((tenant) => tenant.messagingEnabled).length;
@@ -1554,6 +1636,15 @@ function SuperAdminView({
 
       <section className="panel spotlight-panel">
         <PanelHeader icon={Paintbrush} title="Logo & Brand Control" />
+        <div className="branding-preview" style={{ '--brand': activeBusiness.primary, '--accent': activeBusiness.accent } as React.CSSProperties}>
+          <BusinessLogo business={activeBusiness} className="preview-logo" />
+          <div>
+            <span className="eyebrow">Business portal preview</span>
+            <strong>{activeBusiness.name}</strong>
+            <p>{activeBusiness.industry} dashboard · Powered by Verola</p>
+          </div>
+          <button>Primary action</button>
+        </div>
         <div className="brand-command">
           <BusinessLogo business={activeBusiness} className="super-logo" />
           <div>
@@ -1561,14 +1652,30 @@ function SuperAdminView({
             <p>{activeBusiness.logoName ? `Uploaded logo: ${activeBusiness.logoName}` : 'No logo uploaded yet.'}</p>
           </div>
         </div>
-        <label className="logo-upload">
-          <input type="file" accept="image/*" onChange={(event) => uploadBusinessLogo(activeBusiness.id, event.target.files?.[0])} />
-          <Paintbrush size={17} />
-          Upload logo
-        </label>
+        <div className="brand-actions">
+          <label className="logo-upload">
+            <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" onChange={(event) => uploadBusinessLogo(activeBusiness.id, event.target.files?.[0])} />
+            <Paintbrush size={17} />
+            {activeBusiness.logoUrl ? 'Replace logo' : 'Upload logo'}
+          </label>
+          <button className="secondary-action" onClick={() => removeBusinessLogo(activeBusiness.id)} disabled={!activeBusiness.logoUrl}>
+            <X size={16} />
+            Remove logo
+          </button>
+        </div>
+        <div className="brand-colour-controls">
+          <label>
+            <span>Primary colour</span>
+            <input type="color" value={activeBusiness.primary} onChange={(event) => updateBusinessBrand(activeBusiness.id, { primary: event.target.value })} />
+          </label>
+          <label>
+            <span>Accent colour</span>
+            <input type="color" value={activeBusiness.accent} onChange={(event) => updateBusinessBrand(activeBusiness.id, { accent: event.target.value })} />
+          </label>
+        </div>
         <div className="settings-stack">
           <Setting label="Default sender ID" value="VEROLA" />
-          <Setting label="Fallback primary colour" value="#0f766e" />
+          <Setting label="Current primary colour" value={activeBusiness.primary} />
           <Setting label="Logo policy" value="Super Admin upload only" />
           <Setting label="Disabled org access" value="Blocked at Appwrite permissions" />
         </div>
@@ -1606,14 +1713,15 @@ function LoginView({
   error: string;
   login: () => void;
 }) {
+  const brand = useBranding();
   return (
-    <main className="login-screen">
+    <main className="login-screen" style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
       <section className="login-panel">
         <div className="brand-lockup login-brand">
-          <div className="logo-mark">V</div>
+          <BrandMark className="login-logo" />
           <div>
-            <strong>Verola</strong>
-            <span>Secure tenant login</span>
+            <strong>{brand.name}</strong>
+            <span>{brand.name === 'Verola' ? 'Secure tenant login' : `Powered by ${brand.poweredBy}`}</span>
           </div>
         </div>
         <div>
@@ -1663,6 +1771,7 @@ function InviteAcceptView({
   setSetupDraft: (draft: SetupDraft | ((current: SetupDraft) => SetupDraft)) => void;
   completeInviteSetup: (token: string) => void;
 }) {
+  const brand = useBranding();
   const status = invite ? inviteStatus(invite) : undefined;
   const unavailableTitle = status === 'accepted' ? 'Invite already used' : status === 'expired' ? 'Invite expired' : 'Link unavailable';
   const unavailableCopy = status === 'accepted'
@@ -1672,13 +1781,13 @@ function InviteAcceptView({
       : 'This invite token is invalid or could not be found.';
 
   return (
-    <main className="login-screen">
+    <main className="login-screen" style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
       <section className="login-panel">
         <div className="brand-lockup login-brand">
-          <div className="logo-mark">V</div>
+          <BrandMark className="login-logo" />
           <div>
-            <strong>Verola</strong>
-            <span>Company setup invite</span>
+            <strong>{brand.name}</strong>
+            <span>Company setup invite · Powered by {brand.poweredBy}</span>
           </div>
         </div>
         {invite && status === 'pending' ? (
@@ -1715,6 +1824,49 @@ function InviteAcceptView({
               <p className="login-copy">{unavailableCopy}</p>
             </div>
             <a className="login-link" href="/login">Back to login</a>
+          </>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function CustomerStatusView({ job, business }: { job?: Job; business?: Business }) {
+  const brand = useBranding();
+
+  return (
+    <main className="login-screen customer-status-screen" style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
+      <section className="login-panel customer-status-card">
+        <div className="brand-lockup login-brand">
+          <BrandMark className="login-logo" />
+          <div>
+            <strong>{brand.name}</strong>
+            <span>{business ? `${business.industry} updates` : 'Customer update'}</span>
+          </div>
+        </div>
+        {job && business ? (
+          <>
+            <div>
+              <span className="eyebrow">Job status</span>
+              <h1>{job.customer}</h1>
+              <p className="login-copy">{job.item}</p>
+            </div>
+            <div className="login-help">
+              <strong>{business.name}</strong>
+              <span>Status: {defaultWorkflowStages[job.status].label}</span>
+              <span>Payment: {job.paid ? 'Paid' : 'Not paid yet'}</span>
+              <span>Due: {job.due}</span>
+            </div>
+            <p className="powered-by">Powered by {brand.poweredBy}</p>
+          </>
+        ) : (
+          <>
+            <div>
+              <span className="eyebrow">Status unavailable</span>
+              <h1>Tracking link not found</h1>
+              <p className="login-copy">Check the link or contact the business for an update.</p>
+            </div>
+            <p className="powered-by">Powered by {brand.poweredBy}</p>
           </>
         )}
       </section>
@@ -2471,12 +2623,24 @@ function Setting({ label, value }: { label: string; value: string }) {
   );
 }
 
+function BrandMark({ className = '' }: { className?: string }) {
+  const brand = useBranding();
+  const initials = brand.name.split(' ').map((word) => word[0]).join('').slice(0, 2) || 'V';
+  return (
+    <div className={`business-logo ${className}`} style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
+      <span>{initials}</span>
+      {brand.logoUrl && <img src={brand.logoUrl} alt={`${brand.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+    </div>
+  );
+}
+
 function BusinessLogo({ business, className = '' }: { business: Business; className?: string }) {
-  const initials = business.name.split(' ').map((word) => word[0]).join('').slice(0, 2);
+  const initials = business.name.split(' ').map((word) => word[0]).join('').slice(0, 2) || 'V';
 
   return (
-    <div className={`business-logo ${className}`}>
-      {business.logoUrl ? <img src={business.logoUrl} alt={`${business.name} logo`} /> : initials}
+    <div className={`business-logo ${className}`} style={{ '--brand': business.primary, '--accent': business.accent } as React.CSSProperties}>
+      <span>{initials}</span>
+      {business.logoUrl && <img src={business.logoUrl} alt={`${business.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
     </div>
   );
 }

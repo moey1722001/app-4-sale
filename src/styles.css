@@ -91,7 +91,8 @@ button:disabled {
   width: 46px;
   height: 46px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #4f46e5, #06b6d4);
+  background: linear-gradient(135deg, var(--brand), var(--accent));
+  position: relative;
   display: grid;
   place-items: center;
   color: white;
@@ -100,10 +101,18 @@ button:disabled {
   overflow: hidden;
 }
 
+.business-logo span {
+  position: relative;
+  z-index: 1;
+}
+
 .business-logo img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  z-index: 2;
 }
 
 .portal-switcher {
@@ -149,6 +158,12 @@ button:disabled {
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.08);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.tenant-logo {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 10px;
 }
 
 .brand-palette {
@@ -228,7 +243,9 @@ h1 {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #f3f6ff;
+  background:
+    radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--brand) 12%, transparent), transparent 34%),
+    #f3f6ff;
 }
 
 .login-panel {
@@ -238,7 +255,7 @@ h1 {
   padding: 24px;
   border-radius: 20px;
   background: white;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--brand) 16%, var(--line));
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
 }
 
@@ -696,6 +713,99 @@ h1 {
 .invite-hint {
   max-width: 170px;
   text-align: right;
+}
+
+.nav-logo {
+  flex: 0 0 auto;
+}
+
+.login-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 15px;
+}
+
+.brand-actions,
+.brand-colour-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.secondary-action {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-height: 44px;
+  padding: 8px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: white;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.brand-colour-controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.brand-colour-controls input {
+  width: 44px;
+  height: 36px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.branding-preview {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--brand) 28%, white);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--brand) 10%, white), #ffffff 64%);
+}
+
+.branding-preview strong {
+  display: block;
+}
+
+.branding-preview p {
+  color: var(--muted);
+  font-size: 0.84rem;
+  margin-top: 3px;
+}
+
+.branding-preview button {
+  border: 0;
+  border-radius: 12px;
+  min-height: 40px;
+  padding: 8px 12px;
+  background: var(--brand);
+  color: white;
+  font-weight: 900;
+}
+
+.preview-logo {
+  width: 58px;
+  height: 58px;
+}
+
+.powered-by {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: center;
 }
 
 .roster-planner {
@@ -1875,6 +1985,14 @@ h1 {
     align-items: flex-start;
     justify-content: space-between;
     width: 100%;
+  }
+
+  .branding-preview {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .branding-preview button {
+    grid-column: 1 / -1;
   }
 
   .staff-row,

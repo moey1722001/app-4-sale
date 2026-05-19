@@ -14,6 +14,7 @@ VITE_APPWRITE_PROJECT_ID=your-project-id
 VITE_APPWRITE_DATABASE_ID=verola
 VITE_APPWRITE_INVITE_FUNCTION_ID=send-company-invite-function-id
 VITE_APP_URL=https://your-verola-domain.com
+VITE_APPWRITE_LOGO_BUCKET_ID=organisation-logos
 ```
 
 ## Company Invite And Setup Function
@@ -34,7 +35,8 @@ Frontend payload sent to the function:
   "phone": "+61400000111",
   "role": "business_admin",
   "inviteUrl": "https://your-app.com/invite/raw-token-visible-only-in-email-link",
-  "expiresAt": "2026-06-02T00:00:00.000Z"
+  "expiresAt": "2026-06-02T00:00:00.000Z",
+  "logoUrl": "https://your-appwrite-logo-url"
 }
 ```
 
@@ -48,6 +50,7 @@ The function should:
 - add the user to the organisation team with role `business_admin`
 - mark the invite as `accepted`
 - send the email to `adminEmail` only when email credentials are configured
+- include the organisation logo URL in branded email templates when a safe public or signed URL is available
 - never return provider secrets to the frontend
 - return a success response when the email has been accepted by the provider
 
@@ -129,6 +132,7 @@ Permissions:
 - update colours and non-logo business settings: `business_admin`
 - update messaging status fields: Appwrite Functions only after provider credential validation
 - update `logoFileId`: platform super-admin function only
+- serve logos through `Storage.getFileView` for public/logo-safe buckets or through a signed URL function for private buckets
 
 ### organisationInvites
 
@@ -414,11 +418,19 @@ Recommended functions:
 
 ## Storage
 
-Create a `logos` bucket for white-label business logos.
+Create an `organisation-logos` bucket for white-label business logos.
+
+Recommended settings:
+
+- allowed extensions: `png`, `jpg`, `jpeg`, `svg`, `webp`
+- maximum file size: `2 MB`
+- antivirus enabled
+- encryption enabled
 
 Permissions:
 
-- read: organisation team members
+- read: organisation team members and customer/status pages that need that organisation's logo, or use a signed URL function
 - create/update/delete: platform super-admin function only
 
 Store uploaded logo file IDs on the `organisations.logoFileId` attribute.
+Store colours on `organisations.primaryColour` and `organisations.accentColour`.

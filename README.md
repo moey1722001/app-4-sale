@@ -42,6 +42,7 @@ VITE_APPWRITE_PROJECT_ID=your-project-id
 VITE_APPWRITE_DATABASE_ID=verola
 VITE_APPWRITE_INVITE_FUNCTION_ID=send-company-invite-function-id
 VITE_APP_URL=https://your-verola-domain.com
+VITE_APPWRITE_LOGO_BUCKET_ID=organisation-logos
 ```
 
 Build the backend from:

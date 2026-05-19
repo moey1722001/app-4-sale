@@ -2,6 +2,7 @@ const endpoint = process.env.APPWRITE_ENDPOINT;
 const projectId = process.env.APPWRITE_PROJECT_ID;
 const apiKey = process.env.APPWRITE_API_KEY;
 const databaseId = process.env.APPWRITE_DATABASE_ID || 'verola';
+const logoBucketId = process.env.APPWRITE_LOGO_BUCKET_ID || 'organisation-logos';
 
 if (!endpoint || !projectId || !apiKey) {
   console.error('Missing APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, or APPWRITE_API_KEY.');
@@ -91,6 +92,23 @@ async function ensureIndex(collectionId, index) {
   });
 
   console.log(result.duplicate ? `  Index exists: ${collectionId}.${index.key}` : `  Index created: ${collectionId}.${index.key}`);
+}
+
+async function ensureBucket() {
+  const result = await request('POST', '/storage/buckets', {
+    bucketId: logoBucketId,
+    name: 'Organisation Logos',
+    permissions: [],
+    fileSecurity: true,
+    enabled: true,
+    maximumFileSize: 2097152,
+    allowedFileExtensions: ['png', 'jpg', 'jpeg', 'svg', 'webp'],
+    compression: 'gzip',
+    encryption: true,
+    antivirus: true
+  });
+
+  console.log(result.duplicate ? `Bucket exists: ${logoBucketId}` : `Bucket created: ${logoBucketId}`);
 }
 
 function sleep(ms) {
@@ -332,6 +350,7 @@ const collections = [
 ];
 
 await ensureDatabase();
+await ensureBucket();
 
 for (const collection of collections) {
   await ensureCollection(collection);
