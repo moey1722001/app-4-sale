@@ -312,6 +312,13 @@ h1 {
   border: 1px solid rgba(15, 23, 42, 0.06);
 }
 
+.login-link {
+  color: var(--brand);
+  font-weight: 900;
+  text-align: center;
+  text-decoration: none;
+}
+
 .config-pill,
 .status-dot,
 .status-badge {
@@ -629,6 +636,34 @@ h1 {
 .invite-row span {
   color: var(--muted);
   font-size: 0.84rem;
+}
+
+.invite-row a {
+  display: block;
+  color: var(--brand);
+  font-size: 0.78rem;
+  font-weight: 850;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.invite-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.invite-actions button {
+  border: 0;
+  border-radius: 10px;
+  min-height: 36px;
+  padding: 7px 10px;
+  color: var(--brand);
+  background: #eef2ff;
+  font-weight: 900;
 }
 
 .roster-planner {
@@ -1802,6 +1837,11 @@ h1 {
   .setting-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .invite-actions {
+    justify-content: flex-start;
+    width: 100%;
   }
 
   .setting-row strong,
