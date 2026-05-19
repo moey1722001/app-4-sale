@@ -12,7 +12,35 @@ Environment variables:
 VITE_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
 VITE_APPWRITE_PROJECT_ID=your-project-id
 VITE_APPWRITE_DATABASE_ID=verola
+VITE_APPWRITE_INVITE_FUNCTION_ID=send-company-invite-function-id
 ```
+
+## Company Invite Email Function
+
+The browser must not contain email provider secrets. To send company invites automatically, create an Appwrite Function and put the provider credentials in that function's environment.
+
+Frontend payload sent to the function:
+
+```json
+{
+  "inviteId": "INV-123",
+  "businessId": "fresh-fold",
+  "businessName": "Fresh Fold Laundry",
+  "adminEmail": "owner@example.com",
+  "role": "business_admin",
+  "inviteUrl": "https://your-app.com/invite/INV-123"
+}
+```
+
+The function should:
+
+- verify the caller is a platform super admin
+- create or update the `organisationInvites` record
+- send the email to `adminEmail`
+- never return provider secrets to the frontend
+- return a success response when the email has been accepted by the provider
+
+In local demo mode, Verola falls back to opening a pre-filled email draft if `VITE_APPWRITE_INVITE_FUNCTION_ID` is not configured.
 
 ## Authentication And Roles
 

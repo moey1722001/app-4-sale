@@ -1545,6 +1545,7 @@ h1 {
 .messaging-status p,
 .setup-step p,
 .provider-options span,
+.inline-notice,
 .messaging-notice,
 .sms-modal > p,
 .sms-preview-box p {
@@ -1659,6 +1660,7 @@ h1 {
   color: #991b1b;
 }
 
+.inline-notice,
 .messaging-notice {
   padding: 11px 12px;
   border-radius: 12px;

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ExecutionMethod } from 'appwrite';
 import {
   Activity,
   Bell,
@@ -30,7 +31,7 @@ import {
   X,
   Wrench
 } from 'lucide-react';
-import { hasAppwriteConfig } from './lib/appwrite';
+import { appwriteInviteFunctionId, functions, hasAppwriteConfig } from './lib/appwrite';
 
 type Portal = 'super' | 'admin' | 'staff';
 type UserRole = Portal;
@@ -380,6 +381,8 @@ function App() {
   const [loginError, setLoginError] = useState('');
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [copiedInviteId, setCopiedInviteId] = useState('');
+  const [inviteSendingId, setInviteSendingId] = useState('');
+  const [inviteNotice, setInviteNotice] = useState('');
   const [businesses, setBusinesses] = useState(initialBusinesses);
   const [activeBusinessId, setActiveBusinessId] = useState('fresh-fold');
   const [jobs, setJobs] = useState(seedJobs);
@@ -493,10 +496,73 @@ function App() {
     setCurrentPath('/login');
   }
 
+  function buildInviteUrl(inviteId: string) {
+    return `${window.location.origin}/invite/${encodeURIComponent(inviteId)}`;
+  }
+
   async function copyInviteLink(inviteId: string) {
-    const url = `${window.location.origin}/invite/${encodeURIComponent(inviteId)}`;
+    const url = buildInviteUrl(inviteId);
     await navigator.clipboard?.writeText(url);
     setCopiedInviteId(inviteId);
+    setInviteNotice('Invite link copied.');
+  }
+
+  async function sendInviteEmailForInvite(invite: OrganisationInvite) {
+    const url = buildInviteUrl(invite.id);
+    const subject = `Set up ${invite.businessName} in Verola`;
+    const body = [
+      `Hi,`,
+      ``,
+      `You have been invited to set up ${invite.businessName} in Verola.`,
+      ``,
+      `Open your invite link:`,
+      url,
+      ``,
+      `This invite gives you Business Admin access for ${invite.businessName}.`
+    ].join('\n');
+
+    setInviteSendingId(invite.id);
+    setInviteNotice('');
+
+    try {
+      if (hasAppwriteConfig && appwriteInviteFunctionId) {
+        await functions.createExecution(
+          appwriteInviteFunctionId,
+          JSON.stringify({
+            inviteId: invite.id,
+            businessId: invite.businessId,
+            businessName: invite.businessName,
+            adminEmail: invite.adminEmail,
+            role: invite.role,
+            inviteUrl: url
+          }),
+          false,
+          '/',
+          ExecutionMethod.POST,
+          { 'content-type': 'application/json' }
+        );
+        setOrganisationInvites((current) => current.map((item) => (item.id === invite.id ? { ...item, sentAt: 'Email sent just now' } : item)));
+        setInviteNotice(`Invite email sent to ${invite.adminEmail}.`);
+        return;
+      }
+
+      window.location.href = `mailto:${encodeURIComponent(invite.adminEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      setOrganisationInvites((current) => current.map((item) => (item.id === invite.id ? { ...item, sentAt: 'Email draft opened' } : item)));
+      setInviteNotice('Email draft opened. Add VITE_APPWRITE_INVITE_FUNCTION_ID to send automatically from Appwrite.');
+    } catch {
+      await navigator.clipboard?.writeText(url);
+      setCopiedInviteId(invite.id);
+      setOrganisationInvites((current) => current.map((item) => (item.id === invite.id ? { ...item, sentAt: 'Email failed - link copied' } : item)));
+      setInviteNotice('Invite email could not be sent. The link was copied instead.');
+    } finally {
+      setInviteSendingId('');
+    }
+  }
+
+  async function sendInviteEmail(inviteId: string) {
+    const invite = organisationInvites.find((item) => item.id === inviteId);
+    if (!invite) return;
+    await sendInviteEmailForInvite(invite);
   }
 
   function acceptInvite(inviteId: string) {
@@ -517,7 +583,7 @@ function App() {
     setCurrentPath('/business-admin');
   }
 
-  function addBusiness() {
+  async function addBusiness() {
     const name = newBusinessName.trim();
     if (!name) return;
 
@@ -541,27 +607,26 @@ function App() {
       smsSenderName: name.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 10) || 'VEROLA',
       smsSetupStatus: 'not_configured'
     };
+    const invite: OrganisationInvite = {
+      id: `INV-${103 + organisationInvites.length}`,
+      businessId: business.id,
+      businessName: business.name,
+      adminEmail: business.adminEmail ?? '',
+      role: 'business_admin',
+      status: 'sent',
+      sentAt: 'Preparing email'
+    };
 
     setBusinesses((current) => [business, ...current]);
     if (business.adminEmail) {
-      setOrganisationInvites((current) => [
-        {
-          id: `INV-${103 + current.length}`,
-          businessId: business.id,
-          businessName: business.name,
-          adminEmail: business.adminEmail ?? '',
-          role: 'business_admin',
-          status: 'sent',
-          sentAt: 'Just now'
-        },
-        ...current
-      ]);
+      setOrganisationInvites((current) => [invite, ...current]);
     }
     setActiveBusinessId(business.id);
     setNewBusinessName('');
     setNewBusinessIndustry('');
     setNewBusinessLocation('');
     setNewBusinessAdminEmail('');
+    if (business.adminEmail) await sendInviteEmailForInvite(invite);
   }
 
   function deleteBusiness(businessId: string) {
@@ -960,7 +1025,10 @@ function App() {
             setNewBusinessAdminEmail={setNewBusinessAdminEmail}
             organisationInvites={organisationInvites}
             copiedInviteId={copiedInviteId}
+            inviteSendingId={inviteSendingId}
+            inviteNotice={inviteNotice}
             copyInviteLink={copyInviteLink}
+            sendInviteEmail={sendInviteEmail}
             addBusiness={addBusiness}
             deleteBusiness={deleteBusiness}
             uploadBusinessLogo={uploadBusinessLogo}
@@ -1050,7 +1118,10 @@ function SuperAdminView({
   setNewBusinessAdminEmail,
   organisationInvites,
   copiedInviteId,
+  inviteSendingId,
+  inviteNotice,
   copyInviteLink,
+  sendInviteEmail,
   addBusiness,
   deleteBusiness,
   uploadBusinessLogo
@@ -1069,8 +1140,11 @@ function SuperAdminView({
   setNewBusinessAdminEmail: (value: string) => void;
   organisationInvites: OrganisationInvite[];
   copiedInviteId: string;
+  inviteSendingId: string;
+  inviteNotice: string;
   copyInviteLink: (inviteId: string) => void;
-  addBusiness: () => void;
+  sendInviteEmail: (inviteId: string) => void;
+  addBusiness: () => void | Promise<void>;
   deleteBusiness: (businessId: string) => void;
   uploadBusinessLogo: (businessId: string, file?: File) => void;
 }) {
@@ -1142,16 +1216,21 @@ function SuperAdminView({
 
       <section className="panel">
         <PanelHeader icon={Mail} title="Company Invites" action={`${organisationInvites.filter((invite) => invite.status === 'sent').length} pending`} />
+        {inviteNotice && <div className="inline-notice">{inviteNotice}</div>}
         <div className="invite-list">
           {organisationInvites.map((invite) => (
             <div className="invite-row" key={invite.id}>
               <div>
                 <strong>{invite.businessName}</strong>
                 <span>{invite.adminEmail}</span>
-                <a href={`/invite/${encodeURIComponent(invite.id)}`}>{`${window.location.origin}/invite/${invite.id}`}</a>
+                <span>Email: {invite.sentAt}</span>
+                <a href={`/invite/${encodeURIComponent(invite.id)}`}>{`${window.location.origin}/invite/${encodeURIComponent(invite.id)}`}</a>
               </div>
               <div className="invite-actions">
                 <span className={invite.status === 'accepted' ? 'status-dot active' : 'status-dot pending'}>{invite.status === 'accepted' ? 'Accepted' : 'Sent'}</span>
+                <button onClick={() => sendInviteEmail(invite.id)} disabled={inviteSendingId === invite.id}>
+                  {inviteSendingId === invite.id ? 'Sending' : invite.sentAt.includes('sent') ? 'Resend email' : 'Send email'}
+                </button>
                 <button onClick={() => copyInviteLink(invite.id)}>{copiedInviteId === invite.id ? 'Copied' : 'Copy link'}</button>
               </div>
             </div>

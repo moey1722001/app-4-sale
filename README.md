@@ -40,6 +40,7 @@ Create `.env` when you are ready to connect Appwrite:
 VITE_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
 VITE_APPWRITE_PROJECT_ID=your-project-id
 VITE_APPWRITE_DATABASE_ID=verola
+VITE_APPWRITE_INVITE_FUNCTION_ID=send-company-invite-function-id
 ```
 
 Build the backend from:
@@ -53,6 +54,12 @@ Or provision the main database and collections with:
 ```bash
 APPWRITE_ENDPOINT=https://syd.cloud.appwrite.io/v1 APPWRITE_PROJECT_ID=your-project-id APPWRITE_API_KEY=your-server-key npm run appwrite:provision
 ```
+
+Invite emails:
+
+- In local demo mode, Verola opens a pre-filled email draft so you can send the invite from your mail app.
+- For automatic sending, deploy an Appwrite Function that sends the email and set `VITE_APPWRITE_INVITE_FUNCTION_ID` to that function ID.
+- The frontend sends only invite metadata and the invite URL to the function. Any email provider secrets must stay inside the Appwrite Function environment.
 
 ## BYO SMS flow
 
