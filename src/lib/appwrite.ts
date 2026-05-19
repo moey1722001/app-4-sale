@@ -4,6 +4,7 @@ const endpoint = import.meta.env.VITE_APPWRITE_ENDPOINT as string | undefined;
 const projectId = import.meta.env.VITE_APPWRITE_PROJECT_ID as string | undefined;
 
 export const appwriteDatabaseId = import.meta.env.VITE_APPWRITE_DATABASE_ID as string | undefined;
+export const appwriteOrganisationCollectionId = (import.meta.env.VITE_APPWRITE_ORGANISATION_COLLECTION_ID as string | undefined) || 'organisations';
 export const appwriteInviteFunctionId = import.meta.env.VITE_APPWRITE_INVITE_FUNCTION_ID as string | undefined;
 export const appwriteLogoBucketId = import.meta.env.VITE_APPWRITE_LOGO_BUCKET_ID as string | undefined;
 export const appBaseUrl = (import.meta.env.VITE_APP_URL as string | undefined)?.replace(/\/$/, '');

@@ -135,12 +135,17 @@ const collections = [
       { key: 'plan', type: 'enum', elements: ['starter', 'growth', 'scale'], default: 'starter' },
       { key: 'subscriptionStatus', type: 'enum', elements: ['trialing', 'active', 'past_due', 'cancelled'], default: 'trialing' },
       { key: 'logoFileId', type: 'string', size: 255 },
+      { key: 'logoUrl', type: 'string', size: 1000 },
+      { key: 'logoName', type: 'string', size: 255 },
       { key: 'primaryColour', type: 'string', size: 24, default: '#0f766e' },
       { key: 'accentColour', type: 'string', size: 24, default: '#f59e0b' },
       { key: 'messagingEnabled', type: 'boolean', default: false },
       { key: 'smsProvider', type: 'enum', elements: smsProviders },
       { key: 'smsSenderName', type: 'string', size: 40, default: 'VEROLA' },
       { key: 'smsSetupStatus', type: 'enum', elements: smsSetupStatuses, default: 'not_configured' },
+      { key: 'adminEmail', type: 'string', size: 160 },
+      { key: 'contactName', type: 'string', size: 160 },
+      { key: 'contactPhone', type: 'string', size: 40 },
       { key: 'teamId', type: 'string', size: 80, required: true }
     ],
     indexes: [

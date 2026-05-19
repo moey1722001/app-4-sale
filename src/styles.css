@@ -57,8 +57,9 @@ button:disabled {
   flex-direction: column;
   gap: 22px;
   background:
-    linear-gradient(160deg, rgba(79, 70, 229, 0.42), transparent 42%),
-    linear-gradient(180deg, #111827 0%, #151436 100%);
+    radial-gradient(circle at 24% 10%, rgba(129, 140, 248, 0.34), transparent 30%),
+    radial-gradient(circle at 88% 44%, rgba(6, 182, 212, 0.18), transparent 28%),
+    linear-gradient(155deg, #07111f 0%, #15122f 52%, #28114b 100%);
   border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -66,6 +67,10 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.sidebar > .brand-lockup {
+  padding: 4px 2px 8px;
 }
 
 .brand-lockup strong,
@@ -90,14 +95,14 @@ button:disabled {
 .business-logo {
   width: 46px;
   height: 46px;
-  border-radius: 12px;
+  border-radius: 14px;
   background: linear-gradient(135deg, var(--brand), var(--accent));
   position: relative;
   display: grid;
   place-items: center;
   color: white;
   font-weight: 900;
-  box-shadow: 0 10px 22px rgba(79, 70, 229, 0.2);
+  box-shadow: 0 16px 34px rgba(2, 8, 23, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.26);
   overflow: hidden;
 }
 
@@ -117,7 +122,11 @@ button:disabled {
 
 .portal-switcher {
   display: grid;
-  gap: 8px;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .portal-switcher button,
@@ -134,36 +143,93 @@ button:disabled {
 .portal-switcher button {
   color: #e6efed;
   background: transparent;
-  padding: 13px 12px;
+  padding: 11px 12px;
   display: flex;
   align-items: center;
   gap: 10px;
   text-align: left;
-  transition: background 0.12s ease;
+  transition: background 0.12s ease, transform 0.12s ease;
 }
 
 .portal-switcher button:hover,
 .portal-switcher button.active {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.13);
+  transform: translateY(-1px);
 }
 
 .portal-switcher button.active {
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 10px 24px rgba(0, 0, 0, 0.16);
 }
 
 .tenant-card {
   margin-top: auto;
-  padding: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  padding: 18px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 22px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.07)),
+    rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.tenant-card::before {
+  content: "";
+  position: absolute;
+  inset: -45% -35% auto auto;
+  width: 180px;
+  height: 180px;
+  border-radius: 999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 66%, white 10%), transparent 68%);
+  opacity: 0.48;
+  pointer-events: none;
+}
+
+.tenant-card-top {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
 .tenant-logo {
-  width: 52px;
-  height: 52px;
-  margin-bottom: 10px;
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.tenant-shield {
+  width: 44px;
+  height: 44px;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  color: white;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.tenant-card .eyebrow,
+.tenant-card strong,
+.tenant-card p,
+.tenant-card .brand-palette {
+  position: relative;
+}
+
+.tenant-card .eyebrow {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.tenant-card strong {
+  color: #ffffff;
+  font-size: 1.08rem;
+  letter-spacing: 0;
 }
 
 .brand-palette {
@@ -186,16 +252,59 @@ button:disabled {
 }
 
 .topbar {
+  position: relative;
+  overflow: hidden;
   display: flex;
   justify-content: space-between;
   gap: 16px;
   align-items: center;
   margin-bottom: 22px;
-  padding: 20px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: #ffffff;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+  padding: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 28px;
+  color: white;
+  background:
+    radial-gradient(circle at 15% 4%, rgba(129, 140, 248, 0.48), transparent 28%),
+    radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--accent) 38%, transparent), transparent 30%),
+    linear-gradient(135deg, #07111f 0%, #151438 52%, #33125d 100%);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
+}
+
+.topbar::before {
+  content: "";
+  position: absolute;
+  inset: -90px 20% auto auto;
+  width: 380px;
+  height: 210px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.32), rgba(129, 140, 248, 0.18), transparent 70%);
+  filter: blur(8px);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.topbar > * {
+  position: relative;
+  z-index: 1;
+}
+
+.topbar .eyebrow {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.topbar-copy {
+  min-width: 0;
+}
+
+.topbar-copy h1 {
+  color: #ffffff;
+  text-wrap: balance;
+}
+
+.topbar-copy p {
+  margin-top: 9px;
+  color: rgba(226, 232, 240, 0.78);
+  font-weight: 700;
 }
 
 .eyebrow {
@@ -225,6 +334,31 @@ h1 {
   gap: 10px;
 }
 
+.topbar .config-pill {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.topbar .config-pill.ready {
+  background: rgba(34, 197, 94, 0.16);
+  color: #dcfce7;
+}
+
+.topbar .icon-button,
+.topbar .logout-button {
+  color: white;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+}
+
+.topbar .icon-button:hover,
+.topbar .logout-button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
 .logout-button {
   min-height: 42px;
   border: 0;
@@ -246,6 +380,38 @@ h1 {
   background:
     radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--brand) 12%, transparent), transparent 34%),
     #f3f6ff;
+}
+
+.loading-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--brand) 16%, transparent), transparent 34%),
+    #f3f6ff;
+}
+
+.loading-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(420px, 100%);
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid color-mix(in srgb, var(--brand) 16%, var(--line));
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+}
+
+.loading-card strong,
+.loading-card span {
+  display: block;
+}
+
+.loading-card span {
+  color: var(--muted);
+  margin-top: 4px;
 }
 
 .login-panel {
@@ -557,6 +723,26 @@ h1 {
   padding: 18px;
 }
 
+.super-admin-view {
+  gap: 22px;
+}
+
+.super-admin-view .panel {
+  border-radius: 22px;
+  padding: 24px;
+  box-shadow: 0 18px 55px rgba(15, 23, 42, 0.08);
+}
+
+.super-metrics .metric {
+  min-height: 122px;
+  border-radius: 20px;
+  padding: 18px;
+}
+
+.super-metrics .metric strong {
+  font-size: 1.65rem;
+}
+
 .panel.wide,
 .panel.create-job {
   grid-column: 1 / -1;
@@ -632,6 +818,42 @@ h1 {
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 
+.premium-tenant-list {
+  gap: 12px;
+}
+
+.premium-tenant-list .tenant-row {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  border-color: rgba(15, 23, 42, 0.06);
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 16px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+}
+
+.premium-tenant-list .tenant-row:hover,
+.premium-tenant-list .tenant-row.selected {
+  border-color: color-mix(in srgb, var(--brand) 28%, white);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--brand) 7%, white), #ffffff 60%);
+}
+
+.tenant-row-logo {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+}
+
+.tenant-row-main {
+  min-width: 0;
+}
+
+.tenant-row-main small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 4px;
+}
+
 .tenant-row:hover,
 .job-row:hover {
   background: #ffffff;
@@ -688,6 +910,48 @@ h1 {
 .tenant-delete:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.tenant-menu {
+  position: relative;
+}
+
+.tenant-menu summary {
+  list-style: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  font-weight: 900;
+}
+
+.tenant-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.tenant-menu[open] summary {
+  color: var(--ink);
+  background: white;
+}
+
+.tenant-menu button {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 4;
+  width: 160px;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  min-height: 40px;
+  padding: 8px 12px;
+  background: white;
+  color: #991b1b;
+  font-weight: 900;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.14);
 }
 
 .status-dot,
@@ -765,6 +1029,19 @@ h1 {
   font-size: 0.84rem;
 }
 
+.super-invite-panel .invite-list {
+  gap: 12px;
+}
+
+.super-invite-panel .invite-row {
+  align-items: flex-start;
+  padding: 15px;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+}
+
 .invite-row a {
   display: block;
   color: var(--brand);
@@ -793,9 +1070,23 @@ h1 {
   font-weight: 900;
 }
 
+.invite-actions .compact-action {
+  min-height: 36px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  margin-top: 0;
+}
+
 .invite-hint {
   max-width: 170px;
   text-align: right;
+}
+
+.panel-intro {
+  color: var(--muted);
+  line-height: 1.55;
+  margin-bottom: 14px;
 }
 
 .nav-logo {
@@ -877,6 +1168,69 @@ h1 {
   padding: 8px 12px;
   background: var(--brand);
   color: white;
+  font-weight: 900;
+}
+
+.branding-header-preview {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  margin-bottom: 14px;
+  border-radius: 18px;
+  color: white;
+  background:
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--accent) 32%, transparent), transparent 30%),
+    linear-gradient(135deg, #07111f, color-mix(in srgb, var(--brand) 44%, #151438));
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.15);
+}
+
+.branding-header-preview .eyebrow {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.branding-header-preview strong {
+  display: block;
+  color: white;
+  font-size: 1.25rem;
+}
+
+.branding-header-preview p {
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+
+.branding-header-preview svg {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  padding: 11px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.13);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.brand-surface-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.brand-surface-list span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--brand) 72%, #111827);
+  background: color-mix(in srgb, var(--brand) 9%, white);
+  border: 1px solid color-mix(in srgb, var(--brand) 18%, white);
+  font-size: 0.78rem;
   font-weight: 900;
 }
 
@@ -1715,6 +2069,15 @@ h1 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.super-business-panel .business-create-form {
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 20px;
+  background: linear-gradient(135deg, #f8fafc, #ffffff);
+  margin-bottom: 18px;
+}
+
 .business-create-form input,
 .workflow-editor-row input {
   min-width: 0;
@@ -1724,6 +2087,12 @@ h1 {
   padding: 12px;
   outline: none;
   background: white;
+}
+
+.super-business-panel .business-create-form input {
+  min-height: 46px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.86);
 }
 
 .business-create-form button,
@@ -1744,6 +2113,12 @@ h1 {
 
 .business-create-form button {
   grid-column: span 3;
+}
+
+.super-business-panel .business-create-form button {
+  min-height: 48px;
+  border-radius: 14px;
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--brand) 22%, transparent);
 }
 
 .logo-upload {
@@ -2034,6 +2409,10 @@ h1 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .super-admin-view .panel {
+    padding: 18px;
+  }
+
   .quick-form,
   .business-create-form,
   .credential-form,
@@ -2127,6 +2506,20 @@ h1 {
 
   .tenant-row {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .premium-tenant-list .tenant-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .premium-tenant-list .tenant-actions,
+  .premium-tenant-list .tenant-row > svg {
+    grid-column: 1 / -1;
+  }
+
+  .tenant-menu button {
+    left: 0;
+    right: auto;
   }
 
   .tenant-meta {

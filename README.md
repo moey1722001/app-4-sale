@@ -40,6 +40,7 @@ Create `.env` when you are ready to connect Appwrite:
 VITE_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
 VITE_APPWRITE_PROJECT_ID=your-project-id
 VITE_APPWRITE_DATABASE_ID=verola
+VITE_APPWRITE_ORGANISATION_COLLECTION_ID=organisations
 VITE_APPWRITE_INVITE_FUNCTION_ID=send-company-invite-function-id
 VITE_APP_URL=https://your-verola-domain.com
 VITE_APPWRITE_LOGO_BUCKET_ID=organisation-logos

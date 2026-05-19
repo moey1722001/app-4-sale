@@ -31,7 +31,19 @@ import {
   X,
   Wrench
 } from 'lucide-react';
-import { appBaseUrl, appwriteInviteFunctionId, functions, hasAppwriteConfig } from './lib/appwrite';
+import { ID } from 'appwrite';
+import {
+  appBaseUrl,
+  appwriteDatabaseId,
+  appwriteInviteFunctionId,
+  appwriteLogoBucketId,
+  appwriteOrganisationCollectionId,
+  account,
+  databases,
+  functions,
+  hasAppwriteConfig,
+  storage
+} from './lib/appwrite';
 import { BrandProvider, OrganisationBrand, platformBrand, useBranding } from './lib/branding';
 
 type Portal = 'super' | 'admin' | 'staff';
@@ -57,6 +69,12 @@ type Business = {
   sender: string;
   logoName?: string;
   logoUrl?: string;
+  logoFileId?: string;
+  appIconUrl?: string;
+  faviconUrl?: string;
+  lightLogoUrl?: string;
+  darkLogoUrl?: string;
+  emailHeaderLogoUrl?: string;
   messagingEnabled: boolean;
   smsProvider: SmsProvider | null;
   smsSenderName: string;
@@ -459,6 +477,12 @@ const portalPaths: Record<Portal, string> = {
 const inviteStorageKey = 'verola.organisationInvites.v2';
 const businessStorageKey = 'verola.businesses.v2';
 const userStorageKey = 'verola.createdUsers.v2';
+const authStorageKey = 'verola.authUser.v2';
+const activeBusinessStorageKey = 'verola.activeBusinessId.v2';
+const jobsStorageKey = 'verola.jobs.v2';
+const rosterStorageKey = 'verola.rosters.v2';
+const workflowStorageKey = 'verola.workflowStages.v2';
+const smsTemplateStorageKey = 'verola.smsTemplates.v2';
 
 const demoUsers: AuthUser[] = [
   { email: 'moey1722001@gmail.com', name: 'Platform Owner', role: 'super' },
@@ -479,6 +503,12 @@ const demoHighlights = [
   'Customer updates are previewed, logged, and sent only when the business connects its own SMS provider',
   'Staff can see today’s work, notes, payments, rosters, and shift clock status'
 ];
+const defaultSmsTemplates: Record<JobStatus, string> = {
+  collected: 'Hi {{customer}}, {{business}} has received your order. We will update you soon.',
+  in_progress: 'Hi {{customer}}, your order at {{business}} is now in progress.',
+  ready_for_pickup: 'Hi {{customer}}, your order is ready for pickup at {{business}}.',
+  completed: 'Thanks {{customer}}. Your order with {{business}} is complete.'
+};
 
 function portalFromPath(pathname: string): Portal {
   if (pathname.startsWith('/super-admin')) return 'super';
@@ -506,6 +536,12 @@ function debugInvite(message: string, details?: unknown) {
   }
 }
 
+function debugPersistence(message: string, details?: unknown) {
+  if (import.meta.env.DEV) {
+    console.info(`[persistence] ${message}`, details ?? '');
+  }
+}
+
 function generateInviteToken() {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
@@ -516,6 +552,19 @@ function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next.toISOString();
+}
+
+function formatRelativeDate(value?: string) {
+  if (!value || value.startsWith('Demo') || value.includes('created')) return value || 'Just now';
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return value;
+  const diff = time - Date.now();
+  const abs = Math.abs(diff);
+  const day = 24 * 60 * 60 * 1000;
+  if (abs < 60 * 60 * 1000) return diff < 0 ? 'Just now' : 'Within the hour';
+  if (abs < day) return diff < 0 ? 'Today' : 'Later today';
+  const days = Math.round(abs / day);
+  return diff < 0 ? `${days}d ago` : `in ${days}d`;
 }
 
 function readStoredArray<T>(key: string, fallback: T[]) {
@@ -529,6 +578,146 @@ function readStoredArray<T>(key: string, fallback: T[]) {
 
 function writeStoredArray<T>(key: string, value: T[]) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function readStoredValue<T>(key: string, fallback: T) {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) as T : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredValue<T>(key: string, value: T | null) {
+  if (value === null) {
+    localStorage.removeItem(key);
+    return;
+  }
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+type OrganisationDocument = {
+  $id: string;
+  name: string;
+  industry: string;
+  location?: string;
+  isEnabled?: boolean;
+  plan?: 'starter' | 'growth' | 'scale';
+  logoFileId?: string;
+  logoUrl?: string;
+  logoName?: string;
+  primaryColour?: string;
+  accentColour?: string;
+  messagingEnabled?: boolean;
+  smsProvider?: SmsProvider;
+  smsSenderName?: string;
+  smsSetupStatus?: SmsSetupStatus;
+  adminEmail?: string;
+  contactName?: string;
+  contactPhone?: string;
+};
+
+function logoViewUrl(fileId?: string) {
+  if (!fileId || !appwriteLogoBucketId) return undefined;
+  return String(storage.getFileView(appwriteLogoBucketId, fileId));
+}
+
+function businessFromOrganisationDocument(document: OrganisationDocument): Business {
+  const sender = (document.smsSenderName || document.name.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 10) || 'VEROLA');
+  return {
+    id: document.$id,
+    name: document.name,
+    industry: document.industry || 'Service business',
+    location: document.location || 'New location',
+    plan: document.plan === 'scale' ? 'Scale' : document.plan === 'growth' ? 'Growth' : 'Starter',
+    active: document.isEnabled ?? true,
+    staff: 0,
+    sms: 0,
+    jobs: 0,
+    primary: document.primaryColour || platformBrand.primary,
+    accent: document.accentColour || platformBrand.accent,
+    sender,
+    logoName: document.logoName,
+    logoFileId: document.logoFileId,
+    logoUrl: document.logoUrl || logoViewUrl(document.logoFileId),
+    adminEmail: document.adminEmail,
+    contactName: document.contactName,
+    contactPhone: document.contactPhone,
+    messagingEnabled: document.messagingEnabled ?? false,
+    smsProvider: document.smsProvider ?? null,
+    smsSenderName: sender,
+    smsSetupStatus: document.smsSetupStatus ?? 'not_configured'
+  };
+}
+
+function organisationPayloadFromBusiness(business: Business) {
+  return {
+    name: business.name,
+    industry: business.industry,
+    location: business.location,
+    isEnabled: business.active,
+    plan: business.plan.toLowerCase(),
+    subscriptionStatus: 'trialing',
+    logoFileId: business.logoFileId,
+    logoUrl: business.logoUrl?.startsWith('data:') ? undefined : business.logoUrl,
+    logoName: business.logoName,
+    primaryColour: business.primary,
+    accentColour: business.accent,
+    messagingEnabled: business.messagingEnabled,
+    smsProvider: business.smsProvider ?? undefined,
+    smsSenderName: business.smsSenderName,
+    smsSetupStatus: business.smsSetupStatus,
+    teamId: business.id,
+    adminEmail: business.adminEmail,
+    contactName: business.contactName,
+    contactPhone: business.contactPhone
+  };
+}
+
+async function fetchPersistedBusinesses() {
+  if (!hasAppwriteConfig || !appwriteDatabaseId) return [];
+  const response = await databases.listDocuments(appwriteDatabaseId, appwriteOrganisationCollectionId);
+  const businesses = response.documents.map((document) => businessFromOrganisationDocument(document as unknown as OrganisationDocument));
+  debugPersistence('branding fetched after refresh', { count: businesses.length });
+  return businesses;
+}
+
+async function persistBusinessDocument(business: Business) {
+  if (!hasAppwriteConfig || !appwriteDatabaseId) return false;
+  const payload = organisationPayloadFromBusiness(business);
+  try {
+    await databases.updateDocument(appwriteDatabaseId, appwriteOrganisationCollectionId, business.id, payload);
+  } catch {
+    await databases.createDocument(appwriteDatabaseId, appwriteOrganisationCollectionId, business.id, payload);
+  }
+  debugPersistence('business created', { businessId: business.id, name: business.name });
+  return true;
+}
+
+async function patchBusinessDocument(businessId: string, patch: Partial<Business>) {
+  if (!hasAppwriteConfig || !appwriteDatabaseId) return false;
+  const payload: Record<string, unknown> = {};
+  const has = (key: keyof Business) => Object.prototype.hasOwnProperty.call(patch, key);
+  if (patch.name) payload.name = patch.name;
+  if (patch.industry) payload.industry = patch.industry;
+  if (patch.location) payload.location = patch.location;
+  if (patch.active !== undefined) payload.isEnabled = patch.active;
+  if (patch.plan) payload.plan = patch.plan.toLowerCase();
+  if (patch.primary) payload.primaryColour = patch.primary;
+  if (patch.accent) payload.accentColour = patch.accent;
+  if (has('logoFileId')) payload.logoFileId = patch.logoFileId || '';
+  if (has('logoUrl')) payload.logoUrl = patch.logoUrl?.startsWith('data:') ? '' : patch.logoUrl || '';
+  if (has('logoName')) payload.logoName = patch.logoName || '';
+  if (patch.messagingEnabled !== undefined) payload.messagingEnabled = patch.messagingEnabled;
+  if (patch.smsProvider !== undefined) payload.smsProvider = patch.smsProvider ?? undefined;
+  if (patch.smsSenderName) payload.smsSenderName = patch.smsSenderName;
+  if (patch.smsSetupStatus) payload.smsSetupStatus = patch.smsSetupStatus;
+  if (patch.adminEmail !== undefined) payload.adminEmail = patch.adminEmail;
+  if (patch.contactName !== undefined) payload.contactName = patch.contactName;
+  if (patch.contactPhone !== undefined) payload.contactPhone = patch.contactPhone;
+  await databases.updateDocument(appwriteDatabaseId, appwriteOrganisationCollectionId, businessId, payload);
+  return true;
 }
 
 function inviteStatus(invite: OrganisationInvite): InviteStatus {
@@ -583,12 +772,18 @@ function businessFromInvite(invite: OrganisationInvite): Business {
 
 function brandFromBusiness(business?: Business): OrganisationBrand {
   if (!business) return platformBrand;
+  const mainLogoUrl = business.logoUrl;
   return {
     name: business.name,
     tagline: `${business.industry} · ${business.location}`,
-    logoUrl: business.logoUrl,
-    primary: business.primary,
-    accent: business.accent,
+    logoUrl: mainLogoUrl,
+    appIconUrl: business.appIconUrl || mainLogoUrl,
+    faviconUrl: business.faviconUrl || business.appIconUrl || mainLogoUrl,
+    lightLogoUrl: business.lightLogoUrl || mainLogoUrl,
+    darkLogoUrl: business.darkLogoUrl || mainLogoUrl,
+    emailHeaderLogoUrl: business.emailHeaderLogoUrl || mainLogoUrl,
+    primary: business.primary || platformBrand.primary,
+    accent: business.accent || platformBrand.accent,
     poweredBy: 'Verola'
   };
 }
@@ -638,10 +833,12 @@ function fileToDataUrl(file: File) {
 function App() {
   const initialPath = getInitialPath();
   const isOverviewPath = initialPath === '/' || initialPath.startsWith('/overview');
+  const initialPortal = portalFromPath(initialPath);
   const [portal, setPortal] = useState<Portal>(() => portalFromPath(initialPath));
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [loginRole, setLoginRole] = useState<UserRole>(() => portalFromPath(initialPath));
-  const [loginEmail, setLoginEmail] = useState('moey1722001@gmail.com');
+  const [authUser, setAuthUser] = useState<AuthUser | null>(() => readStoredValue<AuthUser | null>(authStorageKey, null));
+  const [authReady, setAuthReady] = useState(false);
+  const [loginRole, setLoginRole] = useState<UserRole>(() => initialPortal);
+  const [loginEmail, setLoginEmail] = useState(demoEmailByRole[initialPortal]);
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [currentPath, setCurrentPath] = useState(initialPath);
@@ -649,9 +846,10 @@ function App() {
   const [inviteSendingId, setInviteSendingId] = useState('');
   const [inviteNotice, setInviteNotice] = useState('');
   const [businesses, setBusinesses] = useState<Business[]>(() => readStoredArray(businessStorageKey, initialBusinesses));
-  const [activeBusinessId, setActiveBusinessId] = useState('fresh-fold');
-  const [jobs, setJobs] = useState(seedJobs);
-  const [rosterShifts, setRosterShifts] = useState(seedRosterShifts);
+  const [businessesLoading, setBusinessesLoading] = useState(Boolean(hasAppwriteConfig));
+  const [activeBusinessId, setActiveBusinessId] = useState(() => readStoredValue(activeBusinessStorageKey, 'fresh-fold'));
+  const [jobs, setJobs] = useState<Job[]>(() => readStoredArray(jobsStorageKey, seedJobs));
+  const [rosterShifts, setRosterShifts] = useState<RosterShift[]>(() => readStoredArray(rosterStorageKey, seedRosterShifts));
   const [query, setQuery] = useState('');
   const [selectedJobId, setSelectedJobId] = useState(seedJobs[0].id);
   const [newCustomer, setNewCustomer] = useState('');
@@ -702,17 +900,12 @@ function App() {
   const [rosterStart, setRosterStart] = useState('9:00 AM');
   const [rosterEnd, setRosterEnd] = useState('5:00 PM');
   const [rosterArea, setRosterArea] = useState('Front counter');
-  const [workflowStages, setWorkflowStages] = useState(defaultWorkflowStages);
+  const [workflowStages, setWorkflowStages] = useState<Record<JobStatus, WorkflowStage>>(() => readStoredValue(workflowStorageKey, defaultWorkflowStages));
   const [smsNotice, setSmsNotice] = useState('');
   const [smsPreview, setSmsPreview] = useState<SmsPreview | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [providerDrafts, setProviderDrafts] = useState<Record<string, { provider: SmsProvider; senderName: string; username: string; apiKey: string; fromNumber: string }>>({});
-  const [smsTemplates, setSmsTemplates] = useState<Record<JobStatus, string>>({
-    collected: 'Hi {{customer}}, {{business}} has received your order. We will update you soon.',
-    in_progress: 'Hi {{customer}}, your order at {{business}} is now in progress.',
-    ready_for_pickup: 'Hi {{customer}}, your order is ready for pickup at {{business}}.',
-    completed: 'Thanks {{customer}}. Your order with {{business}} is complete.'
-  });
+  const [smsTemplates, setSmsTemplates] = useState<Record<JobStatus, string>>(() => readStoredValue(smsTemplateStorageKey, defaultSmsTemplates));
 
   const lockedBusinessId = authUser?.role === 'admin' || authUser?.role === 'staff' ? authUser.businessId : undefined;
   const resolvedBusinessId = lockedBusinessId ?? activeBusinessId;
@@ -729,8 +922,18 @@ function App() {
     [activeBusiness.id, rosterShifts]
   );
   const selectedJob = visibleJobs.find((job) => job.id === selectedJobId) ?? visibleJobs[0];
-  const loginUser = [...demoUsers, ...createdUsers].find((candidate) => candidate.email === loginEmail.trim().toLowerCase() && candidate.role === loginRole);
-  const loginBusiness = loginUser?.businessId ? businesses.find((business) => business.id === loginUser.businessId) : undefined;
+  const inferredAdminUsers = businesses
+    .filter((business) => business.adminEmail)
+    .map((business) => ({
+      email: business.adminEmail ?? '',
+      name: business.contactName || `${business.name} Admin`,
+      role: 'admin' as UserRole,
+      businessId: business.id
+    }));
+  const loginUsers = [...demoUsers, ...createdUsers, ...inferredAdminUsers];
+  const loginUser = loginUsers.find((candidate) => candidate.email === loginEmail.trim().toLowerCase() && candidate.role === loginRole);
+  const loginBusinessByEmail = loginRole === 'admin' ? businesses.find((business) => business.adminEmail?.toLowerCase() === loginEmail.trim().toLowerCase()) : undefined;
+  const loginBusiness = loginUser?.businessId ? businesses.find((business) => business.id === loginUser.businessId) : loginBusinessByEmail;
   const activeBrand = brandFromBusiness(activeBusiness);
   const loginBrand = loginRole === 'super' ? platformBrand : brandFromBusiness(loginBusiness);
   const activeInviteToken = inviteTokenFromPath(currentPath);
@@ -741,9 +944,90 @@ function App() {
   const customerTrackBusiness = customerTrackJob ? businesses.find((business) => business.id === customerTrackJob.businessId) : undefined;
 
   function resetDemoData() {
-    [businessStorageKey, inviteStorageKey, userStorageKey].forEach((key) => localStorage.removeItem(key));
+    [businessStorageKey, inviteStorageKey, userStorageKey, authStorageKey, activeBusinessStorageKey, jobsStorageKey, rosterStorageKey, workflowStorageKey, smsTemplateStorageKey].forEach((key) => localStorage.removeItem(key));
     window.location.href = '/overview';
   }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrateAuth() {
+      const storedUser = readStoredValue<AuthUser | null>(authStorageKey, null);
+      const storedBusinessId = readStoredValue(activeBusinessStorageKey, 'fresh-fold');
+
+      if (storedUser) {
+        setAuthUser(storedUser);
+        setPortal(storedUser.role);
+        setLoginRole(storedUser.role);
+        setLoginEmail(storedUser.email);
+      }
+      if (storedBusinessId) setActiveBusinessId(storedBusinessId);
+
+      if (hasAppwriteConfig) {
+        try {
+          const sessionUser = await account.get();
+          if (!storedUser) {
+            const userWithMeta = sessionUser as typeof sessionUser & { labels?: string[]; prefs?: { role?: UserRole; businessId?: string; name?: string } };
+            const roleFromMeta = userWithMeta.prefs?.role || (userWithMeta.labels?.includes('super_admin') ? 'super' : userWithMeta.labels?.includes('staff') ? 'staff' : userWithMeta.labels?.includes('business_admin') ? 'admin' : undefined);
+            const matchedBusiness = businesses.find((business) => business.adminEmail?.toLowerCase() === sessionUser.email.toLowerCase());
+            if (roleFromMeta || matchedBusiness) {
+              const restoredUser: AuthUser = {
+                email: sessionUser.email,
+                name: userWithMeta.prefs?.name || sessionUser.name || sessionUser.email,
+                role: roleFromMeta || 'admin',
+                businessId: userWithMeta.prefs?.businessId || matchedBusiness?.id
+              };
+              setAuthUser(restoredUser);
+              setPortal(restoredUser.role);
+              setLoginRole(restoredUser.role);
+              setLoginEmail(restoredUser.email);
+              if (restoredUser.businessId) setActiveBusinessId(restoredUser.businessId);
+            }
+          }
+          debugPersistence('Appwrite session restored', { userId: sessionUser.$id, email: sessionUser.email });
+        } catch {
+          debugPersistence('No Appwrite session cookie found; keeping remembered demo session if present');
+        }
+      }
+
+      if (!cancelled) setAuthReady(true);
+    }
+
+    hydrateAuth();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!hasAppwriteConfig) {
+      setBusinessesLoading(false);
+      return;
+    }
+
+    setBusinessesLoading(true);
+    fetchPersistedBusinesses()
+      .then((persistedBusinesses) => {
+        if (cancelled) return;
+        if (persistedBusinesses.length) {
+          setBusinesses(persistedBusinesses);
+          setActiveBusinessId((current) => persistedBusinesses.some((business) => business.id === current) ? current : persistedBusinesses[0].id);
+        }
+        debugPersistence('organisation loaded after login', { count: persistedBusinesses.length });
+      })
+      .catch((error) => {
+        debugPersistence('branding fetch failed, using local fallback', error instanceof Error ? error.message : error);
+      })
+      .finally(() => {
+        if (!cancelled) setBusinessesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     writeStoredArray(businessStorageKey, businesses);
@@ -756,6 +1040,30 @@ function App() {
   useEffect(() => {
     writeStoredArray(userStorageKey, createdUsers);
   }, [createdUsers]);
+
+  useEffect(() => {
+    writeStoredValue(authStorageKey, authUser);
+  }, [authUser]);
+
+  useEffect(() => {
+    writeStoredValue(activeBusinessStorageKey, activeBusinessId);
+  }, [activeBusinessId]);
+
+  useEffect(() => {
+    writeStoredArray(jobsStorageKey, jobs);
+  }, [jobs]);
+
+  useEffect(() => {
+    writeStoredArray(rosterStorageKey, rosterShifts);
+  }, [rosterShifts]);
+
+  useEffect(() => {
+    writeStoredValue(workflowStorageKey, workflowStages);
+  }, [workflowStages]);
+
+  useEffect(() => {
+    writeStoredValue(smsTemplateStorageKey, smsTemplates);
+  }, [smsTemplates]);
 
   useEffect(() => {
     if (!activeInviteToken || activeInvite || !hasAppwriteConfig || !appwriteInviteFunctionId) return;
@@ -825,7 +1133,7 @@ function App() {
 
   async function login() {
     const email = loginEmail.trim().toLowerCase();
-    const user = [...demoUsers, ...createdUsers].find((candidate) => candidate.email === email && candidate.role === loginRole);
+    const user = loginUsers.find((candidate) => candidate.email === email && candidate.role === loginRole);
     const passwordOk = user?.role === 'super' ? await passwordDigest(loginPassword) === demoSuperAdminPasswordHash : Boolean(loginPassword.trim());
     const organisationAvailable = !user?.businessId || businesses.some((business) => business.id === user.businessId && business.active);
 
@@ -845,8 +1153,10 @@ function App() {
 
   function logout() {
     setAuthUser(null);
+    writeStoredValue(authStorageKey, null);
     setPortal('admin');
     setLoginRole('admin');
+    setLoginEmail(demoEmailByRole.admin);
     setLoginPassword('');
     window.history.replaceState({}, '', '/login');
     setCurrentPath('/login');
@@ -928,9 +1238,17 @@ function App() {
     await sendInviteEmailForInvite(invite);
   }
 
-  function updateBusinessBrand(businessId: string, patch: Partial<Pick<Business, 'primary' | 'accent'>>) {
+  async function updateBusinessBrand(businessId: string, patch: Partial<Pick<Business, 'primary' | 'accent'>>) {
     setBusinesses((current) => current.map((business) => (business.id === businessId ? { ...business, ...patch } : business)));
-    setInviteNotice('Brand colours updated for this organisation.');
+    try {
+      if (await patchBusinessDocument(businessId, patch)) {
+        debugPersistence('branding saved', { businessId, ...patch });
+      }
+      setInviteNotice('Brand colours updated for this organisation.');
+    } catch (error) {
+      debugPersistence('branding save failed, local fallback active', error instanceof Error ? error.message : error);
+      setInviteNotice('Brand colours updated locally. Appwrite persistence needs database permissions or the organisation function.');
+    }
   }
 
   async function completeInviteSetup(inviteToken: string) {
@@ -1049,6 +1367,12 @@ function App() {
     };
 
     setBusinesses((current) => [business, ...current]);
+    try {
+      await persistBusinessDocument(business);
+    } catch (error) {
+      debugPersistence('business create persistence failed, local fallback active', error instanceof Error ? error.message : error);
+      setInviteNotice('Business created locally. Appwrite persistence needs database permissions or the organisation function.');
+    }
     if (business.adminEmail) {
       setOrganisationInvites((current) => [invite, ...current]);
     }
@@ -1064,7 +1388,7 @@ function App() {
     if (business.adminEmail) await sendInviteEmailForInvite(invite);
   }
 
-  function deleteBusiness(businessId: string) {
+  async function deleteBusiness(businessId: string) {
     const business = businesses.find((item) => item.id === businessId);
     if (!business || businesses.length <= 1) return;
     if (!window.confirm(`Delete ${business.name}? This removes its jobs, rosters, and pending invites from this workspace.`)) return;
@@ -1081,6 +1405,14 @@ function App() {
       return remainingDrafts;
     });
     setActiveBusinessId(nextActiveBusiness.id);
+    try {
+      if (hasAppwriteConfig && appwriteDatabaseId) {
+        await databases.deleteDocument(appwriteDatabaseId, appwriteOrganisationCollectionId, businessId);
+        debugPersistence('business deleted', { businessId });
+      }
+    } catch (error) {
+      debugPersistence('business delete persistence failed, local fallback active', error instanceof Error ? error.message : error);
+    }
   }
 
   async function uploadBusinessLogo(businessId: string, file?: File) {
@@ -1093,34 +1425,76 @@ function App() {
       setInviteNotice('Logo upload failed. Choose an image smaller than 2 MB.');
       return;
     }
-    const logoUrl = await fileToDataUrl(file);
+    let logoUrl = await fileToDataUrl(file);
+    let logoFileId: string | undefined;
+
+    try {
+      if (hasAppwriteConfig && appwriteLogoBucketId) {
+        const uploadedFile = await storage.createFile(appwriteLogoBucketId, ID.unique(), file);
+        logoFileId = uploadedFile.$id;
+        logoUrl = logoViewUrl(logoFileId) || logoUrl;
+        debugPersistence('logo uploaded', { businessId, fileId: logoFileId, fileName: file.name });
+        debugPersistence('logo URL generated', { businessId, logoUrl });
+      }
+    } catch (error) {
+      debugPersistence('logo upload storage failed, local fallback active', error instanceof Error ? error.message : error);
+      setInviteNotice('Logo preview saved locally. Appwrite Storage needs the logo bucket and permissions configured.');
+    }
+
+    const patch = {
+      logoName: file.name,
+      logoUrl,
+      logoFileId
+    };
     setBusinesses((current) =>
       current.map((business) =>
         business.id === businessId
           ? {
               ...business,
-              logoName: file.name,
-              logoUrl
+              ...patch
             }
           : business
       )
     );
-    setInviteNotice('Logo saved. It will appear across this organisation portal.');
+    try {
+      if (await patchBusinessDocument(businessId, patch)) {
+        const persistedBusinesses = await fetchPersistedBusinesses();
+        if (persistedBusinesses.length) setBusinesses(persistedBusinesses);
+        debugPersistence('branding saved', { businessId, logoFileId });
+      }
+      setInviteNotice('Logo saved. It will appear across this organisation portal.');
+    } catch (error) {
+      debugPersistence('branding save failed, local fallback active', error instanceof Error ? error.message : error);
+      setInviteNotice('Logo updated locally. Appwrite persistence needs database/storage permissions.');
+    }
   }
 
-  function removeBusinessLogo(businessId: string) {
+  async function removeBusinessLogo(businessId: string) {
+    const currentBusiness = businesses.find((business) => business.id === businessId);
     setBusinesses((current) =>
       current.map((business) =>
         business.id === businessId
           ? {
               ...business,
               logoName: undefined,
-              logoUrl: undefined
+              logoUrl: undefined,
+              logoFileId: undefined
             }
           : business
       )
     );
-    setInviteNotice('Logo removed. This business now uses the Verola fallback mark.');
+    try {
+      if (currentBusiness?.logoFileId && appwriteLogoBucketId) {
+        await storage.deleteFile(appwriteLogoBucketId, currentBusiness.logoFileId);
+      }
+      if (await patchBusinessDocument(businessId, { logoName: undefined, logoUrl: undefined, logoFileId: undefined })) {
+        debugPersistence('branding saved', { businessId, logoRemoved: true });
+      }
+      setInviteNotice('Logo removed. This business now uses the Verola fallback mark.');
+    } catch (error) {
+      debugPersistence('logo remove persistence failed, local fallback active', error instanceof Error ? error.message : error);
+      setInviteNotice('Logo removed locally. Appwrite persistence needs database/storage permissions.');
+    }
   }
 
   function getProviderDraft(business: Business) {
@@ -1426,6 +1800,14 @@ function App() {
     );
   }
 
+  if (!authReady && !activeInviteToken && !customerTrackJobId) {
+    return (
+      <BrandProvider brand={authUser ? activeBrand : loginBrand}>
+        <LoadingScreen message="Restoring your session" />
+      </BrandProvider>
+    );
+  }
+
   if (!authUser) {
     return (
       <BrandProvider brand={loginBrand}>
@@ -1468,8 +1850,13 @@ function App() {
         </nav>
 
         <div className="tenant-card">
-          <span className="eyebrow">White-label tenant</span>
-          <BusinessLogo business={activeBusiness} className="tenant-logo" />
+          <div className="tenant-card-top">
+            <BusinessLogo business={activeBusiness} className="tenant-logo" />
+            <div className="tenant-shield" aria-hidden="true">
+              <ShieldCheck size={21} />
+            </div>
+          </div>
+          <span className="eyebrow">Active tenant</span>
           <strong>{activeBusiness.name}</strong>
           <p>{activeBusiness.industry} · {activeBusiness.location}</p>
           <div className="brand-palette">
@@ -1482,9 +1869,14 @@ function App() {
 
       <main className="main">
         <header className="topbar">
-          <div>
+          <div className="topbar-copy">
             <span className="eyebrow">{portalMeta[portal].label}</span>
-            <h1>{portal === 'super' ? 'Platform command centre' : portal === 'admin' ? 'Business workflow hub' : 'Today’s jobs'}</h1>
+            <h1>{portal === 'super' ? 'Platform command centre' : activeBusiness.name}</h1>
+            {portal === 'super' ? (
+              <p>Manage tenants, branding, invites, and platform readiness.</p>
+            ) : (
+              <p>{activeBusiness.industry} · {activeBusiness.location}</p>
+            )}
           </div>
           <div className="topbar-actions">
             <span className={hasAppwriteConfig ? 'config-pill ready' : 'config-pill'}>
@@ -1511,6 +1903,7 @@ function App() {
         {portal === 'super' && (
           <SuperAdminView
             businesses={businesses}
+            businessesLoading={businessesLoading}
             activeBusinessId={activeBusinessId}
             onBusinessChange={setActiveBusinessId}
             activeBusiness={activeBusiness}
@@ -1612,6 +2005,7 @@ function App() {
 
 function SuperAdminView({
   businesses: tenants,
+  businessesLoading,
   activeBusinessId,
   onBusinessChange,
   activeBusiness,
@@ -1641,6 +2035,7 @@ function SuperAdminView({
   resetDemoData
 }: {
   businesses: Business[];
+  businessesLoading: boolean;
   activeBusinessId: string;
   onBusinessChange: (businessId: string) => void;
   activeBusiness: Business;
@@ -1673,16 +2068,16 @@ function SuperAdminView({
   const connectedMessagingTenants = tenants.filter((tenant) => tenant.messagingEnabled).length;
 
   return (
-    <div className="view-grid">
-      <section className="metric-grid">
+    <div className="view-grid super-admin-view">
+      <section className="metric-grid super-metrics">
         <Metric icon={Building2} label="Organisations" value={tenants.length.toString()} detail={`${activeTenants} enabled`} />
         <Metric icon={MessageSquareText} label="BYO providers" value={`${connectedMessagingTenants}/${tenants.length}`} detail="Businesses connected" />
         <Metric icon={CreditCard} label="MRR" value="$7.4k" detail="Subscriptions healthy" />
         <Metric icon={Activity} label="Jobs today" value={tenants.reduce((sum, tenant) => sum + tenant.jobs, 0).toString()} detail="Live workflow volume" />
       </section>
 
-      <section className="panel wide">
-        <PanelHeader icon={Settings} title="Business Management" action="Create, brand, invite" />
+      <section className="panel wide super-business-panel">
+        <PanelHeader icon={Building2} title="Businesses" action={businessesLoading ? 'Syncing Appwrite' : 'Create, brand, invite'} />
         <div className="business-create-form">
           <input value={newBusinessName} onChange={(event) => setNewBusinessName(event.target.value)} placeholder="Business name" />
           <input value={newBusinessContactName} onChange={(event) => setNewBusinessContactName(event.target.value)} placeholder="Contact name" />
@@ -1695,7 +2090,7 @@ function SuperAdminView({
             Send invite
           </button>
         </div>
-        <div className="tenant-list">
+        <div className="tenant-list premium-tenant-list">
           {tenants.map((tenant) => (
             <div
               key={tenant.id}
@@ -1707,9 +2102,11 @@ function SuperAdminView({
                 if (event.key === 'Enter' || event.key === ' ') onBusinessChange(tenant.id);
               }}
             >
-              <div>
+              <BusinessLogo business={tenant} className="tenant-row-logo" />
+              <div className="tenant-row-main">
                 <strong>{tenant.name}</strong>
                 <span>{tenant.industry} · {tenant.location}</span>
+                <small>{tenant.adminEmail || 'Admin invite not sent'}</small>
               </div>
               <div className="tenant-actions">
                 <div className="tenant-meta">
@@ -1718,18 +2115,15 @@ function SuperAdminView({
                     {tenant.active ? 'Enabled' : 'Disabled'}
                   </span>
                 </div>
-                <button
-                  className="tenant-delete"
-                  disabled={tenants.length <= 1}
-                  aria-label={`Delete ${tenant.name}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    deleteBusiness(tenant.id);
-                  }}
-                >
-                  <X size={16} />
-                  Delete
-                </button>
+                <details className="tenant-menu" onClick={(event) => event.stopPropagation()}>
+                  <summary aria-label={`Actions for ${tenant.name}`}>•••</summary>
+                  <button
+                    disabled={tenants.length <= 1}
+                    onClick={() => deleteBusiness(tenant.id)}
+                  >
+                    Delete business
+                  </button>
+                </details>
               </div>
               <ChevronRight size={18} />
             </div>
@@ -1737,7 +2131,7 @@ function SuperAdminView({
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel super-invite-panel">
         <PanelHeader icon={Mail} title="Company Invites" action={`${organisationInvites.filter((invite) => inviteStatus(invite) === 'pending').length} pending`} />
         {inviteNotice && <div className="inline-notice">{inviteNotice}</div>}
         <div className="invite-list">
@@ -1745,10 +2139,8 @@ function SuperAdminView({
             <div className="invite-row" key={invite.id}>
               <div>
                 <strong>{invite.businessName}</strong>
-                <span>{invite.contactName} · {invite.phone || 'No phone yet'}</span>
-                <span>{invite.adminEmail}</span>
-                <span>Expires: {new Date(invite.expiresAt).toLocaleDateString()}</span>
-                <a href={buildInviteUrl(invite)}>{buildInviteUrl(invite)}</a>
+                <span>{invite.contactName} · {invite.adminEmail}</span>
+                <span>Expires {formatRelativeDate(invite.expiresAt)}</span>
               </div>
               <div className="invite-actions">
                 <span className={inviteStatus(invite) === 'accepted' ? 'status-dot active' : inviteStatus(invite) === 'expired' ? 'status-dot paused' : 'status-dot pending'}>{inviteStatus(invite)}</span>
@@ -1759,7 +2151,8 @@ function SuperAdminView({
                 ) : (
                   <span className="invite-hint">Email not configured</span>
                 )}
-                <button onClick={() => copyInviteLink(invite.id)}>{copiedInviteId === invite.id ? 'Copied' : 'Copy link'}</button>
+                <a className="secondary-action compact-action" href={buildInviteUrl(invite)} target="_blank" rel="noreferrer">Preview</a>
+                <button onClick={() => copyInviteLink(invite.id)}>{copiedInviteId === invite.id ? 'Copied' : 'Copy invite'}</button>
               </div>
             </div>
           ))}
@@ -1767,21 +2160,30 @@ function SuperAdminView({
       </section>
 
       <section className="panel spotlight-panel">
-        <PanelHeader icon={Paintbrush} title="Logo & Brand Control" />
+        <PanelHeader icon={Paintbrush} title="Business Branding" action="One logo powers the portal" />
+        <p className="panel-intro">Upload the main business logo once. Verola reuses it for login, setup links, dashboards, customer tracking, email headers, and app icons where supported.</p>
         <div className="branding-preview" style={{ '--brand': activeBusiness.primary, '--accent': activeBusiness.accent } as React.CSSProperties}>
           <BusinessLogo business={activeBusiness} className="preview-logo" />
           <div>
-            <span className="eyebrow">Business portal preview</span>
+            <span className="eyebrow">Login preview</span>
             <strong>{activeBusiness.name}</strong>
             <p>{activeBusiness.industry} dashboard · Powered by Verola</p>
           </div>
           <button>Primary action</button>
         </div>
+        <div className="branding-header-preview" style={{ '--brand': activeBusiness.primary, '--accent': activeBusiness.accent } as React.CSSProperties}>
+          <div>
+            <span className="eyebrow">Dashboard header preview</span>
+            <strong>{activeBusiness.name}</strong>
+            <p>{activeBusiness.industry} · {activeBusiness.location}</p>
+          </div>
+          <ShieldCheck size={24} />
+        </div>
         <div className="brand-command">
           <BusinessLogo business={activeBusiness} className="super-logo" />
           <div>
             <strong>{activeBusiness.name}</strong>
-            <p>{activeBusiness.logoName ? `Uploaded logo: ${activeBusiness.logoName}` : 'No logo uploaded yet.'}</p>
+            <p>{activeBusiness.logoName ? `Main logo: ${activeBusiness.logoName}` : 'No custom logo yet. Platform fallback is active.'}</p>
           </div>
         </div>
         <div className="brand-actions">
@@ -1797,7 +2199,7 @@ function SuperAdminView({
         </div>
         <div className="brand-colour-controls">
           <label>
-            <span>Primary colour</span>
+            <span>Optional brand colour</span>
             <input type="color" value={activeBusiness.primary} onChange={(event) => updateBusinessBrand(activeBusiness.id, { primary: event.target.value })} />
           </label>
           <label>
@@ -1805,11 +2207,16 @@ function SuperAdminView({
             <input type="color" value={activeBusiness.accent} onChange={(event) => updateBusinessBrand(activeBusiness.id, { accent: event.target.value })} />
           </label>
         </div>
+        <div className="brand-surface-list">
+          {['Login', 'Invite setup', 'Dashboard', 'Mobile header', 'Customer status', 'Email header', 'App icon', 'Favicon'].map((surface) => (
+            <span key={surface}><Check size={14} />{surface}</span>
+          ))}
+        </div>
         <div className="settings-stack">
-          <Setting label="Default sender ID" value="VEROLA" />
-          <Setting label="Current primary colour" value={activeBusiness.primary} />
-          <Setting label="Logo policy" value="Super Admin upload only" />
-          <Setting label="Disabled org access" value="Blocked at Appwrite permissions" />
+          <Setting label="Main logo" value={activeBusiness.logoUrl ? 'Used across tenant experience' : 'Platform fallback logo'} />
+          <Setting label="Optional overrides" value="App icon, favicon, dark/light logo, email header" />
+          <Setting label="Current brand colour" value={activeBusiness.primary || 'Platform default'} />
+          <Setting label="Tenant isolation" value="Branding loads from organisation context" />
         </div>
       </section>
 
@@ -2059,6 +2466,21 @@ function CustomerStatusView({ job, business }: { job?: Job; business?: Business 
             <p className="powered-by">Powered by {brand.poweredBy}</p>
           </>
         )}
+      </section>
+    </main>
+  );
+}
+
+function LoadingScreen({ message }: { message: string }) {
+  const brand = useBranding();
+  return (
+    <main className="loading-screen" style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
+      <section className="loading-card">
+        <BrandMark className="login-logo" />
+        <div>
+          <strong>{brand.name}</strong>
+          <span>{message}</span>
+        </div>
       </section>
     </main>
   );
