@@ -805,14 +805,55 @@ function inviteFromUrl(inviteId: string): OrganisationInvite | undefined {
     role: 'business_admin',
     status: 'pending',
     sentAt: 'Invite link',
-    createdAt: new Date().toISOString(),
-    expiresAt: addDays(new Date(), 14)
+    createdAt: params.get('created') || new Date().toISOString(),
+    expiresAt: params.get('expires') || addDays(new Date(), 14)
   };
 }
 
 function buildInviteUrl(invite: OrganisationInvite) {
   const baseUrl = appBaseUrl || window.location.origin;
-  return `${baseUrl}/invite/${encodeURIComponent(invite.token)}`;
+  const params = new URLSearchParams({
+    businessId: invite.businessId,
+    business: invite.businessName,
+    email: invite.adminEmail,
+    contact: invite.contactName || 'Business owner',
+    role: invite.role,
+    expires: invite.expiresAt,
+    created: invite.createdAt,
+    source: 'verola'
+  });
+  if (invite.phone) params.set('phone', invite.phone);
+  return `${baseUrl}/invite/${encodeURIComponent(invite.token)}?${params.toString()}`;
+}
+
+function buildPersonalisedInviteMessage(invite: OrganisationInvite) {
+  const url = buildInviteUrl(invite);
+  const greeting = invite.contactName && invite.contactName !== 'Business owner' ? `Hi ${invite.contactName},` : 'Hi,';
+  const body = [
+    greeting,
+    '',
+    `Verola has created a branded business portal for ${invite.businessName}.`,
+    '',
+    'Use this secure setup link to create your Business Admin account:',
+    url,
+    '',
+    'Once setup is complete, you can add customer jobs, track progress, manage staff workflow, and prepare customer updates from your own branded dashboard.',
+    '',
+    `This invite is for ${invite.adminEmail} and expires on ${new Date(invite.expiresAt).toLocaleDateString()}.`,
+    '',
+    'Powered by Verola'
+  ].join('\n');
+
+  return {
+    subject: `Set up ${invite.businessName} on Verola`,
+    body,
+    url
+  };
+}
+
+function inviteMailtoHref(invite: OrganisationInvite) {
+  const { subject, body } = buildPersonalisedInviteMessage(invite);
+  return `mailto:${encodeURIComponent(invite.adminEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 async function passwordDigest(value: string) {
@@ -936,6 +977,8 @@ function App() {
   const loginBusiness = loginUser?.businessId ? businesses.find((business) => business.id === loginUser.businessId) : loginBusinessByEmail;
   const activeBrand = brandFromBusiness(activeBusiness);
   const loginBrand = loginRole === 'super' ? platformBrand : brandFromBusiness(loginBusiness);
+  const canPreviewPortals = Boolean(authUser && (authUser.role === 'super' || import.meta.env.DEV || !hasAppwriteConfig));
+  const visiblePortals = canPreviewPortals ? (Object.keys(portalMeta) as Portal[]) : authUser ? [authUser.role] : [];
   const activeInviteToken = inviteTokenFromPath(currentPath);
   const activeInvite = activeInviteToken ? organisationInvites.find((invite) => invite.token === activeInviteToken) ?? inviteFromUrl(activeInviteToken) : undefined;
   const inviteBusiness = activeInvite ? businesses.find((business) => business.id === activeInvite.businessId) ?? businessFromInvite(activeInvite) : undefined;
@@ -1111,17 +1154,17 @@ function App() {
 
   useEffect(() => {
     if (!authUser) return;
-    if (authUser.role !== portal) {
+    if (!canPreviewPortals && authUser.role !== portal) {
       setPortal(authUser.role);
       window.history.replaceState({}, '', portalPaths[authUser.role]);
     }
     if ((authUser.role === 'admin' || authUser.role === 'staff') && authUser.businessId) {
       setActiveBusinessId(authUser.businessId);
     }
-  }, [authUser, portal]);
+  }, [authUser, portal, canPreviewPortals]);
 
   function openPortal(nextPortal: Portal) {
-    if (authUser && authUser.role !== nextPortal) return;
+    if (authUser && !canPreviewPortals && authUser.role !== nextPortal) return;
     setPortal(nextPortal);
     setShowNotifications(false);
     const nextPath = portalPaths[nextPortal];
@@ -1173,25 +1216,14 @@ function App() {
   }
 
   async function sendInviteEmailForInvite(invite: OrganisationInvite) {
-    const url = buildInviteUrl(invite);
-    const subject = `Set up ${invite.businessName} in Verola`;
-    const body = [
-      `Hi,`,
-      ``,
-      `You have been invited to set up ${invite.businessName} in Verola.`,
-      ``,
-      `Open your invite link:`,
-      url,
-      ``,
-      `This invite gives you Business Admin access for ${invite.businessName}.`
-    ].join('\n');
+    const { subject, body, url } = buildPersonalisedInviteMessage(invite);
 
     setInviteSendingId(invite.id);
     setInviteNotice('');
 
     try {
       if (hasAppwriteConfig && appwriteInviteFunctionId) {
-        await functions.createExecution(
+        const execution = await functions.createExecution(
           appwriteInviteFunctionId,
           JSON.stringify({
             action: 'send_invite_email',
@@ -1204,6 +1236,8 @@ function App() {
             phone: invite.phone,
             role: invite.role,
             inviteUrl: url,
+            subject,
+            messageBody: body,
             expiresAt: invite.expiresAt,
             logoUrl: businesses.find((business) => business.id === invite.businessId)?.logoUrl
           }),
@@ -1212,6 +1246,11 @@ function App() {
           ExecutionMethod.POST,
           { 'content-type': 'application/json' }
         );
+        const result = execution as { responseStatusCode?: number; responseBody?: string; status?: string };
+        const payload = result.responseBody ? JSON.parse(result.responseBody) as { emailSent?: boolean; emailConfigured?: boolean; error?: string } : {};
+        if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.emailSent === false || payload.emailConfigured === false || payload.error) {
+          throw new Error(payload.error || 'Invite email provider is not configured.');
+        }
         setOrganisationInvites((current) => current.map((item) => (item.id === invite.id ? { ...item, sentAt: 'Email sent just now' } : item)));
         setInviteNotice(`Invite email sent to ${invite.adminEmail}.`);
         debugInvite('invite email sent', { token: invite.token, businessId: invite.businessId });
@@ -1220,13 +1259,13 @@ function App() {
 
       await navigator.clipboard?.writeText(`${subject}\n\n${body}`);
       setCopiedInviteId(invite.id);
-      setInviteNotice('Email sending is not configured. Copy and send the invite link manually.');
-      debugInvite('email sending unavailable, invite copied', { token: invite.token, businessId: invite.businessId });
-    } catch {
-      await navigator.clipboard?.writeText(url);
+      setInviteNotice('Email sending is not configured. A personalised Verola invite was copied so you can send it manually.');
+      debugInvite('email sending unavailable, personalised invite copied', { token: invite.token, businessId: invite.businessId });
+    } catch (error) {
+      await navigator.clipboard?.writeText(`${subject}\n\n${body}`);
       setCopiedInviteId(invite.id);
       setOrganisationInvites((current) => current.map((item) => (item.id === invite.id ? { ...item, sentAt: 'Email failed - link copied' } : item)));
-      setInviteNotice('Invite email could not be sent. The link was copied instead.');
+      setInviteNotice(`Invite email could not be sent. The personalised invite was copied instead.${error instanceof Error ? ` ${error.message}` : ''}`);
     } finally {
       setInviteSendingId('');
     }
@@ -1838,7 +1877,7 @@ function App() {
         </div>
 
         <nav className="portal-switcher" aria-label="Portal">
-          {([authUser.role] as Portal[]).map((key) => {
+          {visiblePortals.map((key) => {
             const Icon = portalMeta[key].icon;
             return (
               <button key={key} className={portal === key ? 'active' : ''} onClick={() => openPortal(key)}>
@@ -2149,7 +2188,9 @@ function SuperAdminView({
                     {inviteSendingId === invite.id ? 'Sending' : invite.sentAt.includes('sent') ? 'Resend email' : 'Send email'}
                   </button>
                 ) : (
-                  <span className="invite-hint">Email not configured</span>
+                  <a className="secondary-action compact-action" href={inviteMailtoHref(invite)}>
+                    Open email
+                  </a>
                 )}
                 <a className="secondary-action compact-action" href={buildInviteUrl(invite)} target="_blank" rel="noreferrer">Preview</a>
                 <button onClick={() => copyInviteLink(invite.id)}>{copiedInviteId === invite.id ? 'Copied' : 'Copy invite'}</button>
@@ -2392,13 +2433,14 @@ function InviteAcceptView({
             <div>
               <span className="eyebrow">Business Setup</span>
               <h1>{invite.businessName}</h1>
-              <p className="login-copy">Confirm the details, create your admin login, and Verola will open your business dashboard.</p>
+              <p className="login-copy">Verola has prepared a branded workspace for your business. Confirm the details, create your admin login, and your dashboard will open ready to use.</p>
             </div>
             <div className="login-help">
               <strong>Invite verified</strong>
               <span>Dashboard: Business Admin</span>
               <span>Organisation: {invite.businessName}</span>
               <span>Email: {invite.adminEmail}</span>
+              <span>Invite source: Verola</span>
               <span>Expires: {new Date(invite.expiresAt).toLocaleDateString()}</span>
             </div>
             <div className="login-form">
@@ -2521,27 +2563,29 @@ function BusinessAdminView(props: {
   setNewJobNotes: (value: string) => void;
   addJob: () => void;
 }) {
-  return (
-    <div className="view-grid">
-      <section className="metric-grid">
-        <Metric icon={Clock3} label="Open jobs" value={props.jobs.filter((job) => job.status !== 'completed').length.toString()} detail="Needs action" />
-        <Metric icon={ClipboardList} label="Ready pickup" value={props.jobs.filter((job) => job.status === 'ready_for_pickup').length.toString()} detail="Customers waiting" />
-        <Metric icon={CreditCard} label="Unpaid jobs" value={props.jobs.filter((job) => !job.paid).length.toString()} detail="Collect when ready" />
-        <Metric icon={CalendarClock} label="Roster replies" value={props.rosterShifts.filter((shift) => shift.response === 'accepted').length.toString()} detail={`${props.rosterShifts.filter((shift) => shift.response === 'sent').length} waiting`} />
-      </section>
+  const readyJobs = props.jobs.filter((job) => job.status === 'ready_for_pickup').length;
+  const openJobs = props.jobs.filter((job) => job.status !== 'completed').length;
+  const unpaidJobs = props.jobs.filter((job) => !job.paid).length;
+  const pendingRosterReplies = props.rosterShifts.filter((shift) => shift.response === 'sent').length;
 
-      <section className="panel wide product-story">
-        <PanelHeader icon={Sparkles} title={`${props.business.name} daily workflow`} action="Demo ready" />
-        <div className="story-steps">
-          <div><strong>1. Add customer</strong><span>Name, mobile, and job notes.</span></div>
-          <div><strong>2. Move status</strong><span>Staff tap simple buttons as work progresses.</span></div>
-          <div><strong>3. Preview update</strong><span>Customer message is generated and logged.</span></div>
-          <div><strong>4. Customer informed</strong><span>SMS sends when the provider is connected.</span></div>
+  return (
+    <div className="business-admin-layout">
+      <section className="business-command">
+        <div>
+          <span className="eyebrow">Today</span>
+          <h2>Run the floor from one place</h2>
+          <p>Add a customer, move work through the queue, and preview updates before customers are contacted.</p>
+        </div>
+        <div className="command-stats">
+          <div><strong>{openJobs}</strong><span>Open</span></div>
+          <div><strong>{readyJobs}</strong><span>Ready</span></div>
+          <div><strong>{unpaidJobs}</strong><span>Unpaid</span></div>
+          <div><strong>{pendingRosterReplies}</strong><span>Roster replies</span></div>
         </div>
       </section>
 
-      <section className="panel create-job">
-        <PanelHeader icon={Plus} title="Create Customer Job" />
+      <section className="panel create-job admin-primary-panel">
+        <PanelHeader icon={Plus} title="Add customer job" action="Name, mobile, notes" />
         <div className="quick-form">
           <input value={props.newCustomer} onChange={(event) => props.setNewCustomer(event.target.value)} placeholder="Customer name" />
           <input value={props.newPhone} onChange={(event) => props.setNewPhone(event.target.value)} placeholder="Mobile number" />
@@ -2553,7 +2597,7 @@ function BusinessAdminView(props: {
         </div>
       </section>
 
-      <section className="panel wide">
+      <section className="panel workflow-panel">
         <JobsHeader query={props.query} setQuery={props.setQuery} />
         <div className="workflow-layout">
           <WorkflowBoard jobs={props.jobs} selectedJobId={props.selectedJob?.id} setSelectedJobId={props.setSelectedJobId} workflowStages={props.workflowStages} />
@@ -2561,73 +2605,69 @@ function BusinessAdminView(props: {
         </div>
       </section>
 
-      <section className="panel">
-        <PanelHeader icon={Settings} title="Workflow Stages" action="Custom" />
-        <WorkflowStageEditor stages={props.workflowStages} setStage={props.setWorkflowStage} />
-      </section>
+      <section className="admin-secondary-grid">
+        <details className="panel admin-drawer" open>
+          <summary><CalendarPlus size={18} /> Rostering <span>{pendingRosterReplies} pending</span></summary>
+          <RosterPlanner
+            staff={props.staff}
+            shifts={props.rosterShifts}
+            draft={props.rosterDraft}
+            setDraft={props.setRosterDraft}
+            addShift={props.addRosterShift}
+            deleteShift={props.deleteRosterShift}
+          />
+        </details>
 
-      <section className="panel wide">
-        <PanelHeader icon={CalendarPlus} title="Rostering" action={`${props.rosterShifts.filter((shift) => shift.response === 'sent').length} pending`} />
-        <RosterPlanner
-          staff={props.staff}
-          shifts={props.rosterShifts}
-          draft={props.rosterDraft}
-          setDraft={props.setRosterDraft}
-          addShift={props.addRosterShift}
-          deleteShift={props.deleteRosterShift}
-        />
-      </section>
+        <details className="panel admin-drawer">
+          <summary><MessageSquareText size={18} /> Messaging <span>{props.business.smsSetupStatus === 'connected' ? 'Connected' : 'Not configured'}</span></summary>
+          <MessagingSettings
+            business={props.business}
+            draft={props.providerDraft}
+            updateDraft={props.updateProviderDraft}
+            connectProvider={props.connectSmsProvider}
+            disconnectProvider={props.disconnectSmsProvider}
+            testProvider={props.testSmsProvider}
+            sendTestSms={props.sendTestSms}
+            notice={props.smsNotice}
+          />
+          <SmsTemplateEditor templates={props.smsTemplates} setTemplate={props.setSmsTemplate} workflowStages={props.workflowStages} />
+        </details>
 
-      <section className="panel">
-        <PanelHeader icon={MessageSquareText} title="Messaging Settings" action={props.business.smsSetupStatus === 'connected' ? 'Connected' : 'Not configured'} />
-        <MessagingSettings
-          business={props.business}
-          draft={props.providerDraft}
-          updateDraft={props.updateProviderDraft}
-          connectProvider={props.connectSmsProvider}
-          disconnectProvider={props.disconnectSmsProvider}
-          testProvider={props.testSmsProvider}
-          sendTestSms={props.sendTestSms}
-          notice={props.smsNotice}
-        />
-      </section>
+        <details className="panel admin-drawer">
+          <summary><Settings size={18} /> Workflow stages <span>Custom labels</span></summary>
+          <WorkflowStageEditor stages={props.workflowStages} setStage={props.setWorkflowStage} />
+        </details>
 
-      <section className="panel">
-        <PanelHeader icon={MessageSquareText} title="SMS Templates" action={props.business.messagingEnabled ? 'Auto-save' : 'Disabled until connected'} />
-        <SmsTemplateEditor templates={props.smsTemplates} setTemplate={props.setSmsTemplate} workflowStages={props.workflowStages} />
-      </section>
-
-      <section className="panel">
-        <PanelHeader icon={UserPlus} title="Staff Access" action={`${props.staff.length} users`} />
-        <div className="staff-list">
-          {props.staff.map((member) => (
-            <div className="staff-row" key={member.phone}>
-              <div>
-                <strong>{member.name}</strong>
-                <span>{member.role} · {member.phone}</span>
-              </div>
-              <span className={member.active ? 'status-dot active' : 'status-dot paused'}>{member.active ? 'Active' : 'Paused'}</span>
+        <details className="panel admin-drawer">
+          <summary><Users size={18} /> Staff and shifts <span>{props.staff.length} users</span></summary>
+          <div className="admin-staff-grid">
+            <div className="staff-list">
+              {props.staff.map((member) => (
+                <div className="staff-row" key={member.phone}>
+                  <div>
+                    <strong>{member.name}</strong>
+                    <span>{member.role} · {member.phone}</span>
+                  </div>
+                  <span className={member.active ? 'status-dot active' : 'status-dot paused'}>{member.active ? 'Active' : 'Paused'}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel">
-        <PanelHeader icon={CalendarClock} title="Shift Clock" action={`${props.staff.filter((member) => member.clockedIn).length} live`} />
-        <div className="shift-list">
-          {props.staff.map((member) => (
-            <div className="shift-row" key={member.phone}>
-              <div>
-                <strong>{member.name}</strong>
-                <span>{member.clockedIn ? `Clocked in ${member.clockInAt}` : `Last shift ${member.lastShift}`}</span>
-              </div>
-              <div className="shift-hours">
-                <strong>{member.hoursToday.toFixed(1)}h</strong>
-                <span className={member.clockedIn ? 'status-dot active' : 'status-dot paused'}>{member.clockedIn ? 'On shift' : 'Off shift'}</span>
-              </div>
+            <div className="shift-list">
+              {props.staff.map((member) => (
+                <div className="shift-row" key={member.phone}>
+                  <div>
+                    <strong>{member.name}</strong>
+                    <span>{member.clockedIn ? `Clocked in ${member.clockInAt}` : `Last shift ${member.lastShift}`}</span>
+                  </div>
+                  <div className="shift-hours">
+                    <strong>{member.hoursToday.toFixed(1)}h</strong>
+                    <span className={member.clockedIn ? 'status-dot active' : 'status-dot paused'}>{member.clockedIn ? 'On shift' : 'Off shift'}</span>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        </details>
       </section>
     </div>
   );

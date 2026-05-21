@@ -1,0 +1,12 @@
+{
+  "name": "verola-manage-business-invite",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "node-appwrite": "^15.0.0"
+  }
+}
