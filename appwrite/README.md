@@ -22,7 +22,7 @@ The invite Appwrite Function also needs server-side variables:
 
 ```bash
 APPWRITE_DATABASE_ID=app4sale
-APPWRITE_API_KEY=server-api-key-with-databases-users-scopes
+APPWRITE_API_KEY=server-api-key-with-databases-documents-users-scopes
 APPWRITE_INVITES_COLLECTION_ID=organisationInvites
 APPWRITE_ORGANISATIONS_COLLECTION_ID=organisations
 APP_BASE_URL=https://your-verola-domain.com
