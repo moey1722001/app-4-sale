@@ -3,7 +3,7 @@
 Use this folder as the Git root directory for the Appwrite Function with ID:
 
 ```text
-6a0f5ee79aa7bce5c892
+6a0f5ee400325b40b2e9
 ```
 
 In Appwrite Console, configure the function deployment source as the existing GitHub repository and set:
