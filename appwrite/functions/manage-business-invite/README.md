@@ -24,6 +24,7 @@ Required function variables:
 
 ```text
 APPWRITE_DATABASE_ID=app4sale
+APPWRITE_API_KEY=server-api-key-with-databases-users-scopes
 APPWRITE_INVITES_COLLECTION_ID=organisationInvites
 APPWRITE_ORGANISATIONS_COLLECTION_ID=organisations
 APP_BASE_URL=https://your-verola-domain.com
@@ -32,3 +33,5 @@ INVITE_EMAIL_FROM=Verola <invites@your-domain.com>
 ```
 
 If `RESEND_API_KEY` or `INVITE_EMAIL_FROM` is missing, the function returns `emailConfigured: false` and the frontend copies the personalised invite as a fallback.
+
+If `APPWRITE_API_KEY` is missing, the function can still send the Resend email, but it cannot store/lookup/accept invites in Appwrite. Add a server API key with database document and user scopes before using production onboarding.

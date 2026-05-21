@@ -23,6 +23,24 @@ function tokenHash(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+function createAppwriteServices(req) {
+  const apiKey = process.env.APPWRITE_API_KEY || process.env.APPWRITE_FUNCTION_API_KEY || req.headers['x-appwrite-key'];
+  if (!apiKey) {
+    return { configured: false, error: 'Missing APPWRITE_API_KEY for database/user operations.' };
+  }
+
+  const client = new Client()
+    .setEndpoint(process.env.APPWRITE_FUNCTION_API_ENDPOINT)
+    .setProject(process.env.APPWRITE_FUNCTION_PROJECT_ID)
+    .setKey(apiKey);
+
+  return {
+    configured: true,
+    databases: new Databases(client),
+    users: new Users(client)
+  };
+}
+
 function inviteUrlFromPayload(payload) {
   if (payload.inviteUrl) return payload.inviteUrl;
   const baseUrl = (process.env.APP_BASE_URL || process.env.VITE_APP_URL || '').replace(/\/$/, '');
@@ -185,30 +203,39 @@ export default async ({ req, res, log, error }) => {
     const payload = parseBody(req);
     const action = payload.action;
 
-    const client = new Client()
-      .setEndpoint(process.env.APPWRITE_FUNCTION_API_ENDPOINT)
-      .setProject(process.env.APPWRITE_FUNCTION_PROJECT_ID)
-      .setKey(req.headers['x-appwrite-key']);
-
-    const databases = new Databases(client);
-    const users = new Users(client);
+    const services = createAppwriteServices(req);
 
     if (action === 'send_invite_email') {
       if (!payload.token || !payload.businessId || !payload.businessName || !payload.adminEmail) {
         return json(res, { emailSent: false, error: 'Missing invite details.' }, 400);
       }
-      await upsertInvite(databases, payload);
+      let inviteStored = false;
+      let inviteStoreError = '';
+      if (services.configured) {
+        try {
+          await upsertInvite(services.databases, payload);
+          inviteStored = true;
+        } catch (exception) {
+          inviteStoreError = exception?.message || 'Could not store invite.';
+          log(`Invite storage failed: ${inviteStoreError}`);
+        }
+      } else {
+        inviteStoreError = services.error;
+        log(inviteStoreError);
+      }
       const emailResult = await sendEmail(payload, log);
-      return json(res, emailResult, emailResult.emailSent ? 200 : 202);
+      return json(res, { ...emailResult, inviteStored, inviteStoreError }, emailResult.emailSent ? 200 : 202);
     }
 
     if (action === 'lookup_invite') {
-      const invite = await lookupInvite(databases, payload.token);
+      if (!services.configured) return json(res, { invite: null, error: services.error }, 503);
+      const invite = await lookupInvite(services.databases, payload.token);
       return json(res, { invite }, invite ? 200 : 404);
     }
 
     if (action === 'accept_invite') {
-      const result = await acceptInvite(databases, users, payload);
+      if (!services.configured) return json(res, { accepted: false, error: services.error }, 503);
+      const result = await acceptInvite(services.databases, services.users, payload);
       return json(res, result);
     }
 

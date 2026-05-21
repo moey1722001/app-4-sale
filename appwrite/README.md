@@ -18,6 +18,18 @@ VITE_APP_URL=https://your-verola-domain.com
 VITE_APPWRITE_LOGO_BUCKET_ID=organisation-logos
 ```
 
+The invite Appwrite Function also needs server-side variables:
+
+```bash
+APPWRITE_DATABASE_ID=app4sale
+APPWRITE_API_KEY=server-api-key-with-databases-users-scopes
+APPWRITE_INVITES_COLLECTION_ID=organisationInvites
+APPWRITE_ORGANISATIONS_COLLECTION_ID=organisations
+APP_BASE_URL=https://your-verola-domain.com
+RESEND_API_KEY=your-resend-api-key
+INVITE_EMAIL_FROM=Verola <invites@your-domain.com>
+```
+
 ## Company Invite And Setup Function
 
 The browser must not contain service role keys or email provider secrets. To run company invites in production, create an Appwrite Function and put Appwrite server SDK credentials plus email provider credentials in that function's environment.

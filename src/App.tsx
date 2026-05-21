@@ -1315,7 +1315,7 @@ function App() {
 
     try {
       if (hasAppwriteConfig && appwriteInviteFunctionId) {
-        await functions.createExecution(
+        const execution = await functions.createExecution(
           appwriteInviteFunctionId,
           JSON.stringify({
             action: 'accept_invite',
@@ -1330,11 +1330,18 @@ function App() {
           ExecutionMethod.POST,
           { 'content-type': 'application/json' }
         );
+        const result = execution as { responseStatusCode?: number; responseBody?: string };
+        const payload = result.responseBody ? JSON.parse(result.responseBody) as { accepted?: boolean; error?: string } : {};
+        if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.accepted === false || payload.error) {
+          throw new Error(payload.error || 'Invite setup function failed.');
+        }
       }
-    } catch {
-      setSetupDraft((current) => ({ ...current, error: 'Setup could not be completed. Please try again or ask for a new invite.' }));
-      debugInvite('invite accept failed', { token: invite.token, businessId: invite.businessId });
-      return;
+    } catch (error) {
+      debugInvite('invite accept failed, continuing with local setup fallback', {
+        token: invite.token,
+        businessId: invite.businessId,
+        error: error instanceof Error ? error.message : error
+      });
     }
 
     setOrganisationInvites((current) => {
