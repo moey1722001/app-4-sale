@@ -811,7 +811,12 @@ function inviteFromUrl(inviteId: string): OrganisationInvite | undefined {
 }
 
 function buildInviteUrl(invite: OrganisationInvite) {
-  const baseUrl = appBaseUrl || window.location.origin;
+  const runtimeOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const runtimeHostname = runtimeOrigin ? new URL(runtimeOrigin).hostname : '';
+  const publicVercelOrigin = 'https://verolaa.vercel.app';
+  const isProtectedVercelDeployment = runtimeHostname.startsWith('verolaa-') && runtimeHostname.endsWith('.vercel.app');
+  const configuredBaseUrl = appBaseUrl && !appBaseUrl.includes('your-verola-domain.com') ? appBaseUrl : '';
+  const baseUrl = isProtectedVercelDeployment ? publicVercelOrigin : (runtimeOrigin || configuredBaseUrl || publicVercelOrigin);
   const params = new URLSearchParams({
     businessId: invite.businessId,
     business: invite.businessName,
