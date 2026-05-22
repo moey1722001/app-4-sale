@@ -807,13 +807,13 @@ function businessFromInvite(invite: OrganisationInvite): Business {
 
 function brandFromBusiness(business?: Business): OrganisationBrand {
   if (!business) return platformBrand;
-  const mainLogoUrl = business.logoUrl;
+  const mainLogoUrl = business.logoUrl || platformBrand.logoUrl;
   return {
     name: business.name,
     tagline: `${business.industry} · ${business.location}`,
     logoUrl: mainLogoUrl,
-    appIconUrl: business.appIconUrl || mainLogoUrl,
-    faviconUrl: business.faviconUrl || business.appIconUrl || mainLogoUrl,
+    appIconUrl: business.appIconUrl || business.logoUrl || platformBrand.appIconUrl,
+    faviconUrl: business.faviconUrl || business.appIconUrl || business.logoUrl || platformBrand.faviconUrl,
     lightLogoUrl: business.lightLogoUrl || mainLogoUrl,
     darkLogoUrl: business.darkLogoUrl || mainLogoUrl,
     emailHeaderLogoUrl: business.emailHeaderLogoUrl || mainLogoUrl,
@@ -3383,21 +3383,23 @@ function Setting({ label, value }: { label: string; value: string }) {
 function BrandMark({ className = '' }: { className?: string }) {
   const brand = useBranding();
   const initials = brand.name.split(' ').map((word) => word[0]).join('').slice(0, 2) || 'V';
+  const logoUrl = brand.appIconUrl || brand.logoUrl;
   return (
     <div className={`business-logo ${className}`} style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
       <span>{initials}</span>
-      {brand.logoUrl && <img src={brand.logoUrl} alt={`${brand.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+      {logoUrl && <img src={logoUrl} alt={`${brand.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
     </div>
   );
 }
 
 function BusinessLogo({ business, className = '' }: { business: Business; className?: string }) {
   const initials = business.name.split(' ').map((word) => word[0]).join('').slice(0, 2) || 'V';
+  const logoUrl = business.logoUrl || platformBrand.appIconUrl || platformBrand.logoUrl;
 
   return (
     <div className={`business-logo ${className}`} style={{ '--brand': business.primary, '--accent': business.accent } as React.CSSProperties}>
       <span>{initials}</span>
-      {business.logoUrl && <img src={business.logoUrl} alt={`${business.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+      {logoUrl && <img src={logoUrl} alt={`${business.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
     </div>
   );
 }

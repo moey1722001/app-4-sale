@@ -16,7 +16,13 @@ export type OrganisationBrand = {
 
 export const platformBrand: OrganisationBrand = {
   name: 'Verola',
-  tagline: 'Workflow SMS SaaS',
+  tagline: 'Run your business. Grow every day.',
+  logoUrl: '/verola-logo.png',
+  appIconUrl: '/verola-icon-512.png',
+  faviconUrl: '/favicon.png',
+  lightLogoUrl: '/verola-logo.png',
+  darkLogoUrl: '/verola-logo.png',
+  emailHeaderLogoUrl: '/verola-logo.png',
   primary: '#4f46e5',
   accent: '#06b6d4',
   poweredBy: 'Verola'
@@ -58,9 +64,9 @@ function upsertMeta(name: string, content: string) {
 }
 
 export function updateDocumentBranding(brand: OrganisationBrand) {
-  const iconHref = brand.faviconUrl || brand.appIconUrl || brand.logoUrl || '/favicon.svg';
+  const iconHref = brand.faviconUrl || brand.appIconUrl || brand.logoUrl || platformBrand.faviconUrl || '/favicon.png';
   upsertHeadLink('icon', iconHref);
-  upsertHeadLink('apple-touch-icon', brand.appIconUrl || brand.logoUrl || '/favicon.svg');
+  upsertHeadLink('apple-touch-icon', brand.appIconUrl || brand.logoUrl || platformBrand.appIconUrl || '/verola-icon-512.png');
   updateManifest(brand, iconHref);
   upsertMeta('theme-color', brand.primary || platformBrand.primary);
 }
