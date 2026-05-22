@@ -1,6 +1,8 @@
 import { Account, Client, Databases, Functions, Storage, Teams } from 'appwrite';
 
-const endpoint = import.meta.env.VITE_APPWRITE_ENDPOINT as string | undefined;
+// Fall back to the syd regional endpoint to avoid "Project is not accessible in this region" errors
+// when VITE_APPWRITE_ENDPOINT is missing from Vercel env vars (SDK default is global cloud.appwrite.io)
+const endpoint = (import.meta.env.VITE_APPWRITE_ENDPOINT as string | undefined) || 'https://syd.cloud.appwrite.io/v1';
 const projectId = import.meta.env.VITE_APPWRITE_PROJECT_ID as string | undefined;
 
 export const appwriteDatabaseId = import.meta.env.VITE_APPWRITE_DATABASE_ID as string | undefined;
@@ -12,11 +14,11 @@ export const appwriteInviteFunctionId = configuredInviteFunctionId === '6a0f5ee7
 export const appwriteLogoBucketId = import.meta.env.VITE_APPWRITE_LOGO_BUCKET_ID as string | undefined;
 export const appBaseUrl = (import.meta.env.VITE_APP_URL as string | undefined)?.replace(/\/$/, '');
 
-export const hasAppwriteConfig = Boolean(endpoint && projectId && appwriteDatabaseId);
+export const hasAppwriteConfig = Boolean(projectId && appwriteDatabaseId);
 
 export const appwriteClient = new Client();
 
-if (endpoint && projectId) {
+if (projectId) {
   appwriteClient.setEndpoint(endpoint).setProject(projectId);
 }
 
