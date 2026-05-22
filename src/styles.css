@@ -63,6 +63,11 @@ button:disabled {
   border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.sidebar::after {
+  content: "";
+  margin-top: auto;
+}
+
 .brand-lockup {
   display: flex;
   align-items: center;
@@ -737,15 +742,28 @@ h1 {
   box-shadow: 0 18px 55px rgba(15, 23, 42, 0.08);
 }
 
-.admin-secondary-grid {
+.admin-secondary-grid,
+.admin-support-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.admin-secondary-grid {
+  grid-template-columns: 1fr;
+}
+
+.admin-support-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .admin-drawer {
   padding: 0;
   overflow: hidden;
+}
+
+.roster-drawer {
+  grid-column: 1 / -1;
+  overflow: visible;
 }
 
 .admin-drawer summary {
@@ -1431,6 +1449,7 @@ h1 {
 .roster-planner {
   display: grid;
   gap: 16px;
+  min-width: 0;
 }
 
 .roster-toolbar {
@@ -1470,9 +1489,10 @@ h1 {
 
 .roster-form {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(150px, 0.9fr) repeat(2, minmax(120px, 0.75fr)) minmax(180px, 1fr) minmax(150px, auto);
+  grid-template-columns: minmax(170px, 1.1fr) minmax(150px, 0.9fr) repeat(2, minmax(112px, 0.65fr)) minmax(170px, 1fr) minmax(140px, auto);
   gap: 10px;
   align-items: end;
+  min-width: 0;
 }
 
 .roster-form label {
@@ -1511,6 +1531,8 @@ h1 {
   border-radius: 16px;
   background: #f8fafc;
   border: 1px solid rgba(15, 23, 42, 0.07);
+  min-width: 0;
+  overflow: visible;
 }
 
 .roster-calendar-header,
@@ -1540,8 +1562,9 @@ h1 {
 .roster-weekdays,
 .roster-calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(104px, 1fr));
   gap: 8px;
+  min-width: 0;
 }
 
 .roster-weekdays span {
@@ -1553,7 +1576,7 @@ h1 {
 
 .roster-calendar-day {
   min-width: 0;
-  min-height: 126px;
+  min-height: 132px;
   display: grid;
   align-content: start;
   gap: 7px;
@@ -1587,7 +1610,7 @@ h1 {
 .roster-calendar-event {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 24px;
   gap: 6px;
   align-items: start;
   padding: 7px;
@@ -1613,12 +1636,14 @@ h1 {
 }
 
 .roster-calendar-event strong {
-  font-size: 0.74rem;
+  font-size: 0.72rem;
+  line-height: 1.2;
 }
 
 .roster-calendar-event span {
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.67rem;
+  line-height: 1.25;
   margin-top: 2px;
 }
 
@@ -2571,6 +2596,7 @@ h1 {
   .view-grid,
   .business-command,
   .admin-secondary-grid,
+  .admin-support-grid,
   .admin-staff-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2608,19 +2634,28 @@ h1 {
     justify-content: flex-start;
   }
 
-  .roster-calendar {
-    overflow-x: auto;
-  }
-
   .roster-weekdays,
   .roster-calendar-grid {
-    min-width: 820px;
+    grid-template-columns: repeat(7, minmax(86px, 1fr));
   }
 }
 
 @media (max-width: 1180px) and (min-width: 981px) {
   .workflow-layout {
     grid-template-columns: 1fr;
+  }
+
+  .admin-support-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .roster-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .roster-form .roster-area,
+  .roster-form .primary-action {
+    grid-column: span 2;
   }
 }
 
@@ -2669,6 +2704,7 @@ h1 {
   .view-grid,
   .business-command,
   .admin-secondary-grid,
+  .admin-support-grid,
   .admin-staff-grid {
     grid-template-columns: 1fr;
   }
@@ -3463,6 +3499,37 @@ body {
 }
 
 @media (max-width: 1180px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+    height: auto;
+    padding: 14px 18px;
+  }
+
+  .sidebar::after {
+    display: none;
+  }
+
+  .sidebar > .brand-lockup {
+    border-bottom: 0;
+    padding-bottom: 4px;
+  }
+
+  .portal-switcher {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .portal-switcher button {
+    justify-content: center;
+  }
+
+  .main {
+    padding: 22px;
+  }
+
   .super-admin-view {
     grid-template-columns: 1fr;
   }
@@ -3493,6 +3560,11 @@ body {
 
   .tenant-card {
     display: none;
+  }
+
+  .admin-secondary-grid,
+  .admin-support-grid {
+    grid-template-columns: 1fr;
   }
 
   .topbar {

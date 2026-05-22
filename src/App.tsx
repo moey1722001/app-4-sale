@@ -1923,23 +1923,6 @@ function App() {
             );
           })}
         </nav>
-
-        <div className="tenant-card">
-          <div className="tenant-card-top">
-            <BusinessLogo business={activeBusiness} className="tenant-logo" />
-            <div className="tenant-shield" aria-hidden="true">
-              <ShieldCheck size={21} />
-            </div>
-          </div>
-          <span className="eyebrow">Active tenant</span>
-          <strong>{activeBusiness.name}</strong>
-          <p>{activeBusiness.industry} · {activeBusiness.location}</p>
-          <div className="brand-palette">
-            <span style={{ background: activeBusiness.primary }} />
-            <span style={{ background: activeBusiness.accent }} />
-            <small>{activeBusiness.sender}</small>
-          </div>
-        </div>
       </aside>
 
       <main className="main">
@@ -2666,7 +2649,7 @@ function BusinessAdminView(props: {
       </section>
 
       <section className="admin-secondary-grid">
-        <details className="panel admin-drawer" open>
+        <details className="panel admin-drawer roster-drawer" open>
           <summary><CalendarPlus size={18} /> Rostering <span>{pendingRosterReplies} pending</span></summary>
           <RosterPlanner
             staff={props.staff}
@@ -2677,7 +2660,9 @@ function BusinessAdminView(props: {
             deleteShift={props.deleteRosterShift}
           />
         </details>
+      </section>
 
+      <section className="admin-support-grid">
         <details className="panel admin-drawer">
           <summary><MessageSquareText size={18} /> Messaging <span>{props.masterSmsSettings.status === 'connected' ? 'Enabled' : 'Unavailable'}</span></summary>
           <BusinessSmsStatus settings={props.masterSmsSettings} notice={props.smsNotice} sendTestSms={props.sendTestSms} />
