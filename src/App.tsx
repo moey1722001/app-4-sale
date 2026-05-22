@@ -49,6 +49,10 @@ import { BrandProvider, OrganisationBrand, platformBrand, useBranding } from './
 type Portal = 'super' | 'admin' | 'staff';
 type UserRole = Portal;
 type JobStatus = 'collected' | 'in_progress' | 'ready_for_pickup' | 'completed';
+type OrderFilter = 'all' | 'collected' | 'in_progress' | 'ready_for_pickup' | 'completed' | 'overdue' | 'unpaid' | 'sms_failed';
+type OrderSort = 'due' | 'newest' | 'overdue' | 'unpaid' | 'stage' | 'customer';
+type OrderViewMode = 'list' | 'pipeline';
+type BusinessJobsView = 'active' | 'completed' | 'history';
 type SmsProvider = 'clicksend' | 'telnyx';
 type SmsSetupStatus = 'not_configured' | 'connected' | 'failed';
 type ShiftResponse = 'draft' | 'sent' | 'accepted' | 'declined';
@@ -135,7 +139,7 @@ type Job = {
   paidAt?: string;
   due: string;
   businessId: string;
-  updates: Array<{ status?: JobStatus; at: string; sms: string; kind?: 'status' | 'note' | 'payment' }>;
+  updates: Array<{ status?: JobStatus; at: string; sms: string; kind?: 'status' | 'note' | 'payment' | 'sms' | 'sms_failed' }>;
 };
 
 type SmsPreview = {
@@ -174,6 +178,19 @@ type SmsLog = {
   response: string;
 };
 
+type WorkflowToast = {
+  id: number;
+  tone: 'success' | 'warning';
+  message: string;
+};
+
+type JobNotification = {
+  state: 'delivered' | 'ready' | 'failed' | 'none';
+  label: string;
+  time: string;
+  message: string;
+};
+
 type StaffMember = {
   name: string;
   role: 'Owner' | 'Manager' | 'Staff';
@@ -195,6 +212,9 @@ type RosterShift = {
   end: string;
   area: string;
   response: ShiftResponse;
+  sentAt?: string;
+  viewedAt?: string;
+  respondedAt?: string;
 };
 
 const initialBusinesses: Business[] = [
@@ -465,26 +485,26 @@ const statusFlow: JobStatus[] = ['collected', 'in_progress', 'ready_for_pickup',
 
 const defaultWorkflowStages: Record<JobStatus, WorkflowStage> = {
   collected: {
-    label: 'Collected',
-    verb: 'Mark collected',
+    label: 'Received',
+    verb: 'Move to Received',
     nextStep: 'Start the work',
     tone: 'blue'
   },
   in_progress: {
-    label: 'In progress',
-    verb: 'Start work',
+    label: 'In Progress',
+    verb: 'Move to In Progress',
     nextStep: 'Finish and mark ready',
     tone: 'amber'
   },
   ready_for_pickup: {
-    label: 'Ready for pickup',
-    verb: 'Ready',
+    label: 'Ready',
+    verb: 'Move to Ready',
     nextStep: 'Notify and hand over',
     tone: 'green'
   },
   completed: {
     label: 'Completed',
-    verb: 'Complete',
+    verb: 'Complete Order',
     nextStep: 'Archived',
     tone: 'slate'
   }
@@ -936,6 +956,7 @@ function App() {
   const [newCustomer, setNewCustomer] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newJobNotes, setNewJobNotes] = useState('');
+  const [newJobPaid, setNewJobPaid] = useState(false);
   const [staffMembers, setStaffMembers] = useState(staff);
   const [newBusinessName, setNewBusinessName] = useState('');
   const [newBusinessContactName, setNewBusinessContactName] = useState('');
@@ -984,6 +1005,8 @@ function App() {
   const [workflowStages, setWorkflowStages] = useState<Record<JobStatus, WorkflowStage>>(() => readStoredValue(workflowStorageKey, defaultWorkflowStages));
   const [smsNotice, setSmsNotice] = useState('');
   const [smsPreview, setSmsPreview] = useState<SmsPreview | null>(null);
+  const [workflowToast, setWorkflowToast] = useState<WorkflowToast | null>(null);
+  const [rosterToast, setRosterToast] = useState<WorkflowToast | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [masterSmsSettings, setMasterSmsSettings] = useState<MasterSmsSettings>(() => readStoredValue(masterSmsStorageKey, defaultMasterSmsSettings));
   const [masterSmsDraft, setMasterSmsDraft] = useState<MasterSmsDraft>(() => ({
@@ -1033,6 +1056,20 @@ function App() {
   const customerTrackJobId = currentPath.match(/^\/track\/([^/]+)/)?.[1] ? decodeURIComponent(currentPath.match(/^\/track\/([^/]+)/)?.[1] ?? '') : '';
   const customerTrackJob = customerTrackJobId ? jobs.find((job) => job.id === customerTrackJobId) : undefined;
   const customerTrackBusiness = customerTrackJob ? businesses.find((business) => business.id === customerTrackJob.businessId) : undefined;
+
+  useEffect(() => {
+    if (portal !== 'staff') return;
+    const staffName = staffMembers[2]?.name;
+    if (!staffName) return;
+    const viewedAt = nowLabel();
+    setRosterShifts((current) =>
+      current.map((shift) =>
+        shift.businessId === activeBusiness.id && shift.staffName === staffName && shift.response === 'sent' && !shift.viewedAt
+          ? { ...shift, viewedAt }
+          : shift
+      )
+    );
+  }, [portal, activeBusiness.id, staffMembers]);
 
   function resetDemoData() {
     [businessStorageKey, inviteStorageKey, userStorageKey, authStorageKey, activeBusinessStorageKey, jobsStorageKey, rosterStorageKey, workflowStorageKey, smsTemplateStorageKey, masterSmsStorageKey, smsLogsStorageKey].forEach((key) => localStorage.removeItem(key));
@@ -1163,6 +1200,26 @@ function App() {
   useEffect(() => {
     writeStoredArray(smsLogsStorageKey, smsLogs);
   }, [smsLogs]);
+
+  useEffect(() => {
+    if (!workflowToast) return;
+    const timeout = window.setTimeout(() => setWorkflowToast(null), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [workflowToast]);
+
+  useEffect(() => {
+    if (!rosterToast) return;
+    const timeout = window.setTimeout(() => setRosterToast(null), 3800);
+    return () => window.clearTimeout(timeout);
+  }, [rosterToast]);
+
+  function showWorkflowToast(message: string, tone: WorkflowToast['tone'] = 'success') {
+    setWorkflowToast({ id: Date.now(), tone, message });
+  }
+
+  function showRosterToast(message: string, tone: WorkflowToast['tone'] = 'success') {
+    setRosterToast({ id: Date.now(), tone, message });
+  }
 
   useEffect(() => {
     if (!activeInviteToken || activeInvite || !hasAppwriteConfig || !appwriteInviteFunctionId) return;
@@ -1658,45 +1715,68 @@ function App() {
   }
 
   function updateJobStatus(jobId: string, status: JobStatus) {
+    const actionTime = nowLabel();
+    const targetJob = jobs.find((item) => item.id === jobId);
+    if (!targetJob) return;
+    const message = smsTemplates[status]
+      .replace('{{customer}}', targetJob.customer.split(' ')[0])
+      .replace('{{business}}', activeBusiness.name);
+    const smsConnected = masterSmsSettings.status === 'connected';
+
     setJobs((currentJobs) =>
       currentJobs.map((job) => {
         if (job.id !== jobId) return job;
-        const message = smsTemplates[status]
-          .replace('{{customer}}', job.customer.split(' ')[0])
-          .replace('{{business}}', activeBusiness.name);
 
         return {
           ...job,
           status,
-          updates: [{ status, at: 'Just now', sms: masterSmsSettings.status === 'connected' ? `Status updated. SMS preview ready: ${message}` : 'SMS unavailable. Status updated, but no customer message was sent.' }, ...job.updates]
+          updates: [
+            {
+              status,
+              at: actionTime,
+              kind: smsConnected ? 'sms' : 'sms_failed',
+              sms: smsConnected ? `Customer SMS sent: ${message}` : 'SMS unavailable. Status updated, but no customer message was sent.'
+            },
+            ...job.updates
+          ]
         };
       })
     );
 
-    const job = jobs.find((item) => item.id === jobId);
-    if (!job) return;
-
-    const message = smsTemplates[status]
-      .replace('{{customer}}', job.customer.split(' ')[0])
-      .replace('{{business}}', activeBusiness.name);
-
-    if (masterSmsSettings.status === 'connected') {
-      setSmsNotice('');
-      setSmsPreview({ jobId, customer: job.customer, phone: job.phone, status, message });
+    if (smsConnected) {
+      setSmsPreview(null);
+      setSmsLogs((logs) => [
+        {
+          id: `sms-${Date.now()}`,
+          businessId: activeBusiness.id,
+          businessName: activeBusiness.name,
+          recipient: targetJob.phone,
+          templateKey: status,
+          status: 'sent',
+          timestamp: actionTime,
+          provider: masterSmsSettings.provider,
+          response: `Queued by ${masterSmsSettings.senderName || 'VEROLA'}`
+        },
+        ...logs
+      ]);
+      setSmsNotice(status === 'completed' ? 'Order archived to today’s completed jobs.' : `Customer notified: ${targetJob.customer}.`);
+      showWorkflowToast(status === 'completed' ? 'Order archived to today’s completed jobs' : 'Customer notified');
     } else {
       setSmsPreview(null);
-      setSmsNotice('SMS unavailable. Status updated, but no customer message was sent. Contact the platform admin.');
+      setSmsNotice(status === 'completed' ? 'Order archived to today’s completed jobs. SMS was unavailable.' : 'SMS unavailable. Status updated, but no customer message was sent. Contact the platform admin.');
+      showWorkflowToast(status === 'completed' ? 'Order archived to today’s completed jobs' : 'Status updated. SMS unavailable.', status === 'completed' ? 'success' : 'warning');
     }
   }
 
   function sendPreviewSms() {
     if (!smsPreview) return;
+    const sentAt = nowLabel();
     setJobs((currentJobs) =>
       currentJobs.map((job) =>
         job.id === smsPreview.jobId
           ? {
               ...job,
-              updates: [{ status: smsPreview.status, at: 'Just now', sms: `Customer SMS sent via ${providerName(masterSmsSettings.provider)}: ${smsPreview.message}` }, ...job.updates]
+              updates: [{ status: smsPreview.status, at: sentAt, kind: 'sms', sms: `Customer SMS sent: ${smsPreview.message}` }, ...job.updates]
             }
           : job
       )
@@ -1709,14 +1789,15 @@ function App() {
         recipient: smsPreview.phone,
         templateKey: smsPreview.status,
         status: 'sent',
-        timestamp: 'Just now',
+        timestamp: sentAt,
         provider: masterSmsSettings.provider,
         response: `Queued by ${masterSmsSettings.senderName || 'VEROLA'}`
       },
       ...logs
     ]);
     setSmsPreview(null);
-    setSmsNotice('Customer SMS sent using the platform master provider.');
+    setSmsNotice(`SMS sent to ${smsPreview.customer}.`);
+    showWorkflowToast(`SMS sent to ${smsPreview.customer}`);
   }
 
   async function copyPreviewSms() {
@@ -1741,7 +1822,8 @@ function App() {
       estimate: 'Not quoted',
       notes: newJobNotes.trim() || 'No special notes',
       status: 'collected',
-      paid: false,
+      paid: newJobPaid,
+      paidAt: newJobPaid ? 'Just now' : undefined,
       due: 'Today',
       businessId: activeBusiness.id,
       updates: [
@@ -1758,6 +1840,7 @@ function App() {
     setNewCustomer('');
     setNewPhone('');
     setNewJobNotes('');
+    setNewJobPaid(false);
     setSmsNotice('Job created. Move it through the workflow to preview customer updates.');
   }
 
@@ -1774,16 +1857,28 @@ function App() {
       start: rosterStart.trim(),
       end: rosterEnd.trim(),
       area: rosterArea.trim(),
-      response: 'sent'
+      response: 'sent',
+      sentAt: nowLabel()
     };
 
     setRosterShifts((current) => [shift, ...current]);
     setSmsNotice(`Shift sent to ${shift.staffName} for ${formatRosterDate(shift.date)}, ${shift.start} to ${shift.end}.`);
+    showRosterToast(`Shift sent to ${shift.staffName}`);
   }
 
   function updateRosterResponse(shiftId: string, response: ShiftResponse) {
-    setRosterShifts((current) => current.map((shift) => (shift.id === shiftId ? { ...shift, response } : shift)));
-    setSmsNotice(response === 'accepted' ? 'Shift accepted.' : response === 'declined' ? 'Shift declined.' : 'Roster updated.');
+    const shift = rosterShifts.find((item) => item.id === shiftId);
+    const respondedAt = nowLabel();
+    setRosterShifts((current) => current.map((item) => (item.id === shiftId ? { ...item, response, respondedAt, viewedAt: item.viewedAt || respondedAt } : item)));
+    const message = shift
+      ? response === 'accepted'
+        ? `${shift.staffName} accepted ${shift.start} roster`
+        : response === 'declined'
+          ? `${shift.staffName} declined ${shift.start} roster`
+          : 'Roster updated.'
+      : 'Roster updated.';
+    setSmsNotice(message);
+    showRosterToast(message, response === 'declined' ? 'warning' : 'success');
   }
 
   function deleteRosterShift(shiftId: string) {
@@ -2006,6 +2101,7 @@ function App() {
             jobs={visibleJobs}
             staff={staffMembers}
             rosterShifts={activeRosterShifts}
+            rosterToast={rosterToast}
             rosterDraft={{ staffName: rosterStaff, date: rosterDate, start: rosterStart, end: rosterEnd, area: rosterArea }}
             setRosterDraft={(patch) => {
               if (patch.staffName !== undefined) setRosterStaff(patch.staffName);
@@ -2026,8 +2122,10 @@ function App() {
             workflowStages={workflowStages}
             setWorkflowStage={(status, patch) => setWorkflowStages((stages) => ({ ...stages, [status]: { ...stages[status], ...patch } }))}
             smsNotice={smsNotice}
+            workflowToast={workflowToast}
             masterSmsSettings={masterSmsSettings}
             sendTestSms={sendTestSms}
+            smsLogs={smsLogs.filter((log) => log.businessId === activeBusiness.id)}
             smsTemplates={smsTemplates}
             setSmsTemplate={(status, body) => setSmsTemplates((templates) => ({ ...templates, [status]: body }))}
             newCustomer={newCustomer}
@@ -2036,6 +2134,8 @@ function App() {
             setNewPhone={setNewPhone}
             newJobNotes={newJobNotes}
             setNewJobNotes={setNewJobNotes}
+            newJobPaid={newJobPaid}
+            setNewJobPaid={setNewJobPaid}
             addJob={addJob}
           />
         )}
@@ -2052,6 +2152,7 @@ function App() {
             setQuery={setQuery}
             staffMember={staffMembers[2]}
             rosterShifts={activeRosterShifts.filter((shift) => shift.staffName === staffMembers[2].name)}
+            rosterToast={rosterToast}
             updateRosterResponse={updateRosterResponse}
             toggleClock={() => toggleStaffClock(staffMembers[2].name)}
           />
@@ -2580,6 +2681,7 @@ function BusinessAdminView(props: {
   jobs: Job[];
   staff: StaffMember[];
   rosterShifts: RosterShift[];
+  rosterToast: WorkflowToast | null;
   rosterDraft: { staffName: string; date: string; start: string; end: string; area: string };
   setRosterDraft: (patch: Partial<{ staffName: string; date: string; start: string; end: string; area: string }>) => void;
   addRosterShift: () => void;
@@ -2594,8 +2696,10 @@ function BusinessAdminView(props: {
   workflowStages: Record<JobStatus, WorkflowStage>;
   setWorkflowStage: (status: JobStatus, patch: Partial<WorkflowStage>) => void;
   smsNotice: string;
+  workflowToast: WorkflowToast | null;
   masterSmsSettings: MasterSmsSettings;
   sendTestSms: () => void;
+  smsLogs: SmsLog[];
   smsTemplates: Record<JobStatus, string>;
   setSmsTemplate: (status: JobStatus, body: string) => void;
   newCustomer: string;
@@ -2604,53 +2708,93 @@ function BusinessAdminView(props: {
   setNewPhone: (value: string) => void;
   newJobNotes: string;
   setNewJobNotes: (value: string) => void;
+  newJobPaid: boolean;
+  setNewJobPaid: (value: boolean) => void;
   addJob: () => void;
 }) {
   const readyJobs = props.jobs.filter((job) => job.status === 'ready_for_pickup').length;
   const openJobs = props.jobs.filter((job) => job.status !== 'completed').length;
   const unpaidJobs = props.jobs.filter((job) => !job.paid).length;
   const pendingRosterReplies = props.rosterShifts.filter((shift) => shift.response === 'sent').length;
+  const [orderFilter, setOrderFilter] = useState<OrderFilter>('all');
+  const [jobsView, setJobsView] = useState<BusinessJobsView>('active');
+  const activeJobs = props.jobs.filter((job) => job.status !== 'completed');
+  const completedJobs = props.jobs.filter((job) => job.status === 'completed');
+  const operationalJobs = useMemo(
+    () => activeJobs.filter((job) => simpleOrderFilterMatches(job, orderFilter)),
+    [activeJobs, orderFilter]
+  );
+  const visibleHistoryJobs = props.jobs;
+  const visibleJobsForView = jobsView === 'active' ? operationalJobs : jobsView === 'completed' ? completedJobs : visibleHistoryJobs;
+  const operationalSelectedJob = visibleJobsForView.find((job) => job.id === props.selectedJob?.id) ?? visibleJobsForView[0];
 
   return (
     <div className="business-admin-layout">
       <section className="business-command">
         <div>
           <span className="eyebrow">Today</span>
-          <h2>Run the floor from one place</h2>
-          <p>Add a customer, move work through the queue, and preview updates before customers are contacted.</p>
+          <h2>Active jobs only</h2>
+          <p>Work through today’s active orders. Completed jobs move out of the way automatically.</p>
         </div>
         <div className="command-stats">
-          <div><strong>{openJobs}</strong><span>Open</span></div>
+          <div><strong>{activeJobs.length}</strong><span>Active</span></div>
           <div><strong>{readyJobs}</strong><span>Ready</span></div>
-          <div><strong>{unpaidJobs}</strong><span>Unpaid</span></div>
-          <div><strong>{pendingRosterReplies}</strong><span>Roster replies</span></div>
+          <div><strong>{completedJobs.length}</strong><span>Completed today</span></div>
         </div>
       </section>
 
       <section className="panel create-job admin-primary-panel">
-        <PanelHeader icon={Plus} title="Add customer job" action="Name, mobile, notes" />
+        <PanelHeader icon={Plus} title="Add order" action="Name, mobile, details" />
         <div className="quick-form">
           <input value={props.newCustomer} onChange={(event) => props.setNewCustomer(event.target.value)} placeholder="Customer name" />
           <input value={props.newPhone} onChange={(event) => props.setNewPhone(event.target.value)} placeholder="Mobile number" />
-          <textarea value={props.newJobNotes} onChange={(event) => props.setNewJobNotes(event.target.value)} placeholder="Notes, job details, item, preferences..." rows={2} />
+          <textarea value={props.newJobNotes} onChange={(event) => props.setNewJobNotes(event.target.value)} placeholder="Order details or notes..." rows={2} />
+          <label className="paid-toggle">
+            <input type="checkbox" checked={props.newJobPaid} onChange={(event) => props.setNewJobPaid(event.target.checked)} />
+            Already paid
+          </label>
           <button className="primary-action" onClick={props.addJob} disabled={!props.newCustomer.trim() || !props.newPhone.trim()}>
             <Plus size={18} />
-            Add job
+            Add order
           </button>
         </div>
       </section>
 
       <section className="panel workflow-panel">
         <JobsHeader query={props.query} setQuery={props.setQuery} />
-        <div className="workflow-layout">
-          <WorkflowBoard jobs={props.jobs} selectedJobId={props.selectedJob?.id} setSelectedJobId={props.setSelectedJobId} workflowStages={props.workflowStages} />
-          <JobDetail job={props.selectedJob} updateJobStatus={props.updateJobStatus} addJobNote={props.addJobNote} toggleJobPaid={props.toggleJobPaid} workflowStages={props.workflowStages} />
+        {props.workflowToast && (
+          <div className={`workflow-toast ${props.workflowToast.tone}`} key={props.workflowToast.id}>
+            {props.workflowToast.tone === 'success' ? <CheckCircle2 size={17} /> : <Bell size={17} />}
+            <span>{props.workflowToast.message}</span>
+          </div>
+        )}
+        <BusinessJobsNav activeView={jobsView} setView={setJobsView} activeCount={activeJobs.length} completedCount={completedJobs.length} historyCount={props.jobs.length} />
+        {jobsView === 'active' && <SimpleOrderTabs jobs={activeJobs} activeFilter={orderFilter} setFilter={setOrderFilter} workflowStages={props.workflowStages} />}
+        <div className={operationalSelectedJob ? 'simple-order-shell has-drawer' : 'simple-order-shell'}>
+          {jobsView === 'active' && (
+            <SimpleOrderList
+              jobs={operationalJobs}
+              selectedJobId={operationalSelectedJob?.id}
+              setSelectedJobId={props.setSelectedJobId}
+              workflowStages={props.workflowStages}
+              updateJobStatus={props.updateJobStatus}
+              toggleJobPaid={props.toggleJobPaid}
+            />
+          )}
+          {jobsView === 'completed' && (
+            <CompletedJobsList jobs={completedJobs} selectedJobId={operationalSelectedJob?.id} setSelectedJobId={props.setSelectedJobId} />
+          )}
+          {jobsView === 'history' && (
+            <HistoryJobsList jobs={visibleHistoryJobs} selectedJobId={operationalSelectedJob?.id} setSelectedJobId={props.setSelectedJobId} workflowStages={props.workflowStages} />
+          )}
+          {operationalSelectedJob && <JobDetail job={operationalSelectedJob} updateJobStatus={props.updateJobStatus} addJobNote={props.addJobNote} toggleJobPaid={props.toggleJobPaid} workflowStages={props.workflowStages} />}
         </div>
       </section>
 
       <section className="admin-secondary-grid">
         <details className="panel admin-drawer roster-drawer" open>
           <summary><CalendarPlus size={18} /> Rostering <span>{pendingRosterReplies} pending</span></summary>
+          <RosterOperationsSummary shifts={props.rosterShifts} toast={props.rosterToast} />
           <RosterPlanner
             staff={props.staff}
             shifts={props.rosterShifts}
@@ -2665,7 +2809,7 @@ function BusinessAdminView(props: {
       <section className="admin-support-grid">
         <details className="panel admin-drawer">
           <summary><MessageSquareText size={18} /> Messaging <span>{props.masterSmsSettings.status === 'connected' ? 'Enabled' : 'Unavailable'}</span></summary>
-          <BusinessSmsStatus settings={props.masterSmsSettings} notice={props.smsNotice} sendTestSms={props.sendTestSms} />
+          <BusinessSmsStatus settings={props.masterSmsSettings} notice={props.smsNotice} sendTestSms={props.sendTestSms} logs={props.smsLogs} />
           <SmsTemplateEditor templates={props.smsTemplates} setTemplate={props.setSmsTemplate} workflowStages={props.workflowStages} />
         </details>
 
@@ -2720,6 +2864,7 @@ function StaffView(props: {
   setQuery: (query: string) => void;
   staffMember: StaffMember;
   rosterShifts: RosterShift[];
+  rosterToast: WorkflowToast | null;
   updateRosterResponse: (shiftId: string, response: ShiftResponse) => void;
   toggleClock: () => void;
 }) {
@@ -2745,6 +2890,12 @@ function StaffView(props: {
       </section>
       <section className="panel wide">
         <PanelHeader icon={CalendarPlus} title="My shifts" action={`${props.rosterShifts.filter((shift) => shift.response === 'sent').length} to reply`} />
+        {props.rosterToast && (
+          <div className={`workflow-toast roster ${props.rosterToast.tone}`} key={props.rosterToast.id}>
+            {props.rosterToast.tone === 'success' ? <CheckCircle2 size={17} /> : <Bell size={17} />}
+            <span>{props.rosterToast.message}</span>
+          </div>
+        )}
         <StaffRoster shifts={props.rosterShifts} updateRosterResponse={props.updateRosterResponse} />
       </section>
     </div>
@@ -2754,11 +2905,481 @@ function StaffView(props: {
 function JobsHeader({ query, setQuery }: { query: string; setQuery: (query: string) => void }) {
   return (
     <div className="jobs-header">
-      <PanelHeader icon={History} title="Customer Jobs" />
+      <PanelHeader icon={History} title="Orders" action="Simple list" />
       <label className="search-box">
         <Search size={18} />
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer, phone, item" />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer, phone, order" />
       </label>
+    </div>
+  );
+}
+
+function BusinessJobsNav({
+  activeView,
+  setView,
+  activeCount,
+  completedCount,
+  historyCount
+}: {
+  activeView: BusinessJobsView;
+  setView: (view: BusinessJobsView) => void;
+  activeCount: number;
+  completedCount: number;
+  historyCount: number;
+}) {
+  const items: Array<{ key: BusinessJobsView; label: string; count: number }> = [
+    { key: 'active', label: 'Active Jobs', count: activeCount },
+    { key: 'completed', label: "Today's Completed", count: completedCount },
+    { key: 'history', label: 'History/Search', count: historyCount }
+  ];
+
+  return (
+    <div className="business-jobs-nav">
+      {items.map((item) => (
+        <button key={item.key} className={activeView === item.key ? 'active' : ''} onClick={() => setView(item.key)}>
+          <span>{item.label}</span>
+          <strong>{item.count}</strong>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SimpleOrderTabs({
+  jobs,
+  activeFilter,
+  setFilter,
+  workflowStages
+}: {
+  jobs: Job[];
+  activeFilter: OrderFilter;
+  setFilter: (filter: OrderFilter) => void;
+  workflowStages: Record<JobStatus, WorkflowStage>;
+}) {
+  const tabs: Array<{ key: OrderFilter; label: string; count: number }> = [
+    { key: 'all', label: 'All', count: jobs.length },
+    { key: 'collected', label: simpleStageLabel('collected', workflowStages), count: jobs.filter((job) => job.status === 'collected').length },
+    { key: 'in_progress', label: simpleStageLabel('in_progress', workflowStages), count: jobs.filter((job) => job.status === 'in_progress').length },
+    { key: 'ready_for_pickup', label: simpleStageLabel('ready_for_pickup', workflowStages), count: jobs.filter((job) => job.status === 'ready_for_pickup').length }
+  ];
+
+  return (
+    <div className="simple-order-tabs">
+      {tabs.map((tab) => (
+        <button key={tab.key} className={activeFilter === tab.key ? 'active' : ''} onClick={() => setFilter(tab.key)}>
+          <span>{tab.label}</span>
+          <strong>{tab.count}</strong>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SimpleOrderList({
+  jobs,
+  selectedJobId,
+  setSelectedJobId,
+  workflowStages,
+  updateJobStatus,
+  toggleJobPaid
+}: {
+  jobs: Job[];
+  selectedJobId?: string;
+  setSelectedJobId: (id: string) => void;
+  workflowStages: Record<JobStatus, WorkflowStage>;
+  updateJobStatus: (jobId: string, status: JobStatus) => void;
+  toggleJobPaid: (jobId: string) => void;
+}) {
+  if (!jobs.length) {
+    return (
+      <div className="simple-empty-orders">
+        <ClipboardList size={22} />
+        <strong>No orders here</strong>
+        <p>New orders will appear in this list.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="simple-order-list">
+      {jobs.map((job) => {
+        const notification = latestNotification(job);
+        const nextStatus = nextJobStatus(job.status);
+        return (
+          <article className={`simple-order-card ${selectedJobId === job.id ? 'selected' : ''}`} key={job.id} onClick={() => setSelectedJobId(job.id)}>
+            <div className="simple-order-main">
+              <div>
+                <strong>{job.customer}</strong>
+                <span>{job.phone}</span>
+              </div>
+              <StatusBadge status={job.status} workflowStages={workflowStages} />
+            </div>
+            <p>{job.item}</p>
+            <div className="simple-order-meta">
+              <PaymentBadge paid={job.paid} />
+              <SmsStatePill notification={notification} />
+              <span>Updated {lastUpdateLabel(job)}</span>
+            </div>
+            <div className="simple-order-actions" onClick={(event) => event.stopPropagation()}>
+              {nextStatus && <button className="primary-simple-action" onClick={() => updateJobStatus(job.id, nextStatus)}>{simpleStageAction(nextStatus)}</button>}
+              <button onClick={() => updateJobStatus(job.id, job.status)}>Notify customer</button>
+              <button onClick={() => toggleJobPaid(job.id)}>{job.paid ? 'Mark unpaid' : 'Mark paid'}</button>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function CompletedJobsList({
+  jobs,
+  selectedJobId,
+  setSelectedJobId
+}: {
+  jobs: Job[];
+  selectedJobId?: string;
+  setSelectedJobId: (id: string) => void;
+}) {
+  if (!jobs.length) {
+    return (
+      <div className="simple-empty-orders">
+        <CheckCircle2 size={22} />
+        <strong>No completed jobs today</strong>
+        <p>Complete an active order and it will move here automatically.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="completed-jobs-list">
+      {jobs.map((job) => {
+        const notification = latestNotification(job);
+        return (
+          <button className={selectedJobId === job.id ? 'completed-job-row selected' : 'completed-job-row'} key={job.id} onClick={() => setSelectedJobId(job.id)}>
+            <div>
+              <strong>{job.customer}</strong>
+              <span>{job.item}</span>
+            </div>
+            <span>{completionTime(job)}</span>
+            <PaymentBadge paid={job.paid} />
+            <SmsStatePill notification={notification} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function HistoryJobsList({
+  jobs,
+  selectedJobId,
+  setSelectedJobId,
+  workflowStages
+}: {
+  jobs: Job[];
+  selectedJobId?: string;
+  setSelectedJobId: (id: string) => void;
+  workflowStages: Record<JobStatus, WorkflowStage>;
+}) {
+  if (!jobs.length) {
+    return (
+      <div className="simple-empty-orders">
+        <Search size={22} />
+        <strong>No history found</strong>
+        <p>Use search above to find past customers and orders.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="history-jobs-list">
+      {jobs.map((job) => (
+        <button className={selectedJobId === job.id ? 'history-job-row selected' : 'history-job-row'} key={job.id} onClick={() => setSelectedJobId(job.id)}>
+          <div>
+            <strong>{job.customer}</strong>
+            <span>{job.phone} · {job.item}</span>
+          </div>
+          <StatusBadge status={job.status} workflowStages={workflowStages} />
+          <PaymentBadge paid={job.paid} />
+          <span>{lastUpdateLabel(job)}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function OrderOperationsToolbar({
+  jobs,
+  activeFilter,
+  setFilter,
+  sort,
+  setSort,
+  viewMode,
+  setViewMode
+}: {
+  jobs: Job[];
+  activeFilter: OrderFilter;
+  setFilter: (filter: OrderFilter) => void;
+  sort: OrderSort;
+  setSort: (sort: OrderSort) => void;
+  viewMode: OrderViewMode;
+  setViewMode: (mode: OrderViewMode) => void;
+}) {
+  const filters: Array<{ key: OrderFilter; label: string; count: number }> = [
+    { key: 'all', label: 'All orders', count: jobs.length },
+    { key: 'collected', label: 'Collected', count: jobs.filter((job) => job.status === 'collected').length },
+    { key: 'in_progress', label: 'In Progress', count: jobs.filter((job) => job.status === 'in_progress').length },
+    { key: 'ready_for_pickup', label: 'Ready', count: jobs.filter((job) => job.status === 'ready_for_pickup').length },
+    { key: 'completed', label: 'Completed', count: jobs.filter((job) => job.status === 'completed').length },
+    { key: 'overdue', label: 'Overdue', count: jobs.filter(isOrderOverdue).length },
+    { key: 'unpaid', label: 'Unpaid', count: jobs.filter((job) => !job.paid).length },
+    { key: 'sms_failed', label: 'SMS failed', count: jobs.filter((job) => latestNotification(job).state === 'failed').length }
+  ];
+
+  return (
+    <div className="order-ops-toolbar">
+      <div className="order-filter-row" role="tablist" aria-label="Order filters">
+        {filters.map((filter) => (
+          <button key={filter.key} className={activeFilter === filter.key ? 'active' : ''} onClick={() => setFilter(filter.key)}>
+            <span>{filter.label}</span>
+            <strong>{filter.count}</strong>
+          </button>
+        ))}
+      </div>
+      <label className="order-sort">
+        <span>Sort</span>
+        <select value={sort} onChange={(event) => setSort(event.target.value as OrderSort)}>
+          <option value="due">Due time</option>
+          <option value="newest">Newest update</option>
+          <option value="overdue">Overdue first</option>
+          <option value="unpaid">Unpaid first</option>
+          <option value="stage">Status</option>
+          <option value="customer">Customer name</option>
+        </select>
+      </label>
+      <div className="order-view-toggle" aria-label="Order view mode">
+        <button className={viewMode === 'list' ? 'active' : ''} onClick={() => setViewMode('list')}>List</button>
+        <button className={viewMode === 'pipeline' ? 'active' : ''} onClick={() => setViewMode('pipeline')}>Pipeline</button>
+      </div>
+    </div>
+  );
+}
+
+function OrderSummaryBar({ jobs, workflowStages }: { jobs: Job[]; workflowStages: Record<JobStatus, WorkflowStage> }) {
+  const summary = [
+    { label: workflowStages.collected.label, value: jobs.filter((job) => job.status === 'collected').length, tone: 'collected' },
+    { label: workflowStages.in_progress.label, value: jobs.filter((job) => job.status === 'in_progress').length, tone: 'progress' },
+    { label: workflowStages.ready_for_pickup.label, value: jobs.filter((job) => job.status === 'ready_for_pickup').length, tone: 'ready' },
+    { label: workflowStages.completed.label, value: jobs.filter((job) => job.status === 'completed').length, tone: 'done' },
+    { label: 'Overdue', value: jobs.filter(isOrderOverdue).length, tone: 'danger' },
+    { label: 'Unpaid', value: jobs.filter((job) => !job.paid).length, tone: 'warn' }
+  ];
+
+  return (
+    <div className="order-summary-bar">
+      {summary.map((item) => (
+        <div className={`order-summary-tile ${item.tone}`} key={item.label}>
+          <span>{item.label}</span>
+          <strong>{item.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OrderBulkActions({
+  selectedCount,
+  runAction,
+  clearSelection
+}: {
+  selectedCount: number;
+  runAction: (action: 'in_progress' | 'ready_for_pickup' | 'completed' | 'paid' | 'sms') => void;
+  clearSelection: () => void;
+}) {
+  if (!selectedCount) return null;
+  return (
+    <div className="order-bulk-actions">
+      <strong>{selectedCount} selected</strong>
+      <button onClick={() => runAction('in_progress')}>Mark in progress</button>
+      <button onClick={() => runAction('ready_for_pickup')}>Mark ready</button>
+      <button onClick={() => runAction('sms')}>Send/resend SMS</button>
+      <button onClick={() => runAction('paid')}>Mark paid</button>
+      <button onClick={() => runAction('completed')}>Complete selected</button>
+      <button className="ghost" onClick={clearSelection}>Clear</button>
+    </div>
+  );
+}
+
+function OrderOperationsTable({
+  jobs,
+  selectedJobId,
+  selectedOrderIds,
+  toggleOrder,
+  toggleAll,
+  setSelectedJobId,
+  workflowStages,
+  staff,
+  updateJobStatus,
+  toggleJobPaid
+}: {
+  jobs: Job[];
+  selectedJobId?: string;
+  selectedOrderIds: string[];
+  toggleOrder: (jobId: string) => void;
+  toggleAll: () => void;
+  setSelectedJobId: (id: string) => void;
+  workflowStages: Record<JobStatus, WorkflowStage>;
+  staff: StaffMember[];
+  updateJobStatus: (jobId: string, status: JobStatus) => void;
+  toggleJobPaid: (jobId: string) => void;
+}) {
+  const allVisibleSelected = jobs.length > 0 && jobs.every((job) => selectedOrderIds.includes(job.id));
+
+  if (!jobs.length) {
+    return (
+      <div className="orders-empty-state">
+        <ClipboardList size={22} />
+        <strong>No orders match this view</strong>
+        <p>Try another filter, search term, or add a new customer job.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="orders-table-shell">
+      <div className="orders-table-head">
+        <label className="order-select-cell">
+          <input type="checkbox" checked={allVisibleSelected} onChange={toggleAll} />
+        </label>
+        <span>Order</span>
+        <span>Customer</span>
+        <span>Service / item</span>
+        <span>Due</span>
+        <span>Status</span>
+        <span>Payment</span>
+        <span>SMS</span>
+        <span>Updated</span>
+        <span>Staff</span>
+        <span>Priority</span>
+        <span>Actions</span>
+      </div>
+      <div className="orders-table-body">
+        {jobs.map((job) => {
+          const notification = latestNotification(job);
+          const nextStatus = nextJobStatus(job.status);
+          const selected = selectedOrderIds.includes(job.id);
+          return (
+            <div className={`orders-table-row ${selectedJobId === job.id ? 'active' : ''}`} key={job.id} onClick={() => setSelectedJobId(job.id)}>
+              <label className="order-select-cell" onClick={(event) => event.stopPropagation()}>
+                <input type="checkbox" checked={selected} onChange={() => toggleOrder(job.id)} />
+              </label>
+              <strong className="order-id-cell">{job.id}</strong>
+              <div className="customer-cell">
+                <strong>{job.customer}</strong>
+                <span>{job.phone}</span>
+              </div>
+              <div className="service-cell">
+                <strong>{job.item}</strong>
+                <span>{job.serviceType}</span>
+              </div>
+              <span className={isOrderOverdue(job) ? 'due-cell overdue' : 'due-cell'}>{job.due}</span>
+              <StatusBadge status={job.status} workflowStages={workflowStages} />
+              <PaymentBadge paid={job.paid} />
+              <SmsStatePill notification={notification} />
+              <span className="muted-cell">{lastUpdateLabel(job)}</span>
+              <span className="muted-cell">{assignedStaffForJob(job, staff)}</span>
+              <span className={job.priority === 'Urgent' ? 'priority urgent' : job.priority === 'Hold' ? 'priority hold' : 'priority'}>{job.priority}</span>
+              <div className="row-actions" onClick={(event) => event.stopPropagation()}>
+                {nextStatus && <button onClick={() => updateJobStatus(job.id, nextStatus)}>{workflowStages[nextStatus].verb}</button>}
+                {!job.paid && <button onClick={() => toggleJobPaid(job.id)}>Paid</button>}
+                {notification.state === 'failed' && <button onClick={() => updateJobStatus(job.id, job.status)}>Resend</button>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SmsStatePill({ notification }: { notification: JobNotification }) {
+  const label = notification.state === 'delivered'
+    ? `Delivered${notification.time ? ` · ${notification.time}` : ''}`
+    : notification.state === 'ready'
+      ? 'Sending…'
+      : notification.state === 'failed'
+        ? `Failed${notification.time ? ` · ${notification.time}` : ''}`
+        : 'Unavailable';
+  return <span className={`sms-state-pill ${notification.state}`}>{label}</span>;
+}
+
+function RosterOperationsSummary({ shifts, toast }: { shifts: RosterShift[]; toast: WorkflowToast | null }) {
+  const accepted = shifts.filter((shift) => shift.response === 'accepted').length;
+  const declined = shifts.filter((shift) => shift.response === 'declined').length;
+  const pending = shifts.filter((shift) => shift.response === 'sent').length;
+  const viewed = shifts.filter((shift) => shift.response === 'sent' && shift.viewedAt).length;
+  const needsAction = shifts.filter(shiftNeedsRosterAttention);
+  const recent = rosterActivity(shifts).slice(0, 4);
+
+  return (
+    <div className="roster-ops">
+      {toast && (
+        <div className={`workflow-toast roster ${toast.tone}`} key={toast.id}>
+          {toast.tone === 'success' ? <CheckCircle2 size={17} /> : <Bell size={17} />}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
+      <div className="roster-kpis">
+        <RosterKpi label="Accepted" value={accepted} tone="accepted" />
+        <RosterKpi label="Viewed" value={viewed} tone="viewed" />
+        <RosterKpi label="Pending" value={pending} tone="pending" />
+        <RosterKpi label="Needs action" value={declined + needsAction.length} tone="declined" />
+      </div>
+
+      <div className="roster-live-grid">
+        <div className="roster-feed">
+          <div className="detail-section-title">
+            <strong>Roster activity</strong>
+            <span>Live responses</span>
+          </div>
+          {recent.length ? recent.map((item) => (
+            <div className={`roster-feed-row ${item.tone}`} key={`${item.shift.id}-${item.label}`}>
+              <span>{item.icon}</span>
+              <div>
+                <strong>{item.label}</strong>
+                <small>{item.shift.staffName} · {item.shift.start} - {item.shift.end} · {item.time}</small>
+              </div>
+            </div>
+          )) : <p>No roster activity yet.</p>}
+        </div>
+
+        <div className="roster-attention">
+          <div className="detail-section-title">
+            <strong>Needs manager attention</strong>
+            <span>{needsAction.length} shifts</span>
+          </div>
+          {needsAction.length ? needsAction.slice(0, 3).map((shift) => (
+            <div className="attention-row" key={shift.id}>
+              <div>
+                <strong>{shift.staffName}</strong>
+                <small>{formatRosterDate(shift.date)} · {shift.start} · {shift.area}</small>
+              </div>
+              <RosterStatusChip shift={shift} />
+            </div>
+          )) : <p>All visible shifts are covered or awaiting normal replies.</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RosterKpi({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return (
+    <div className={`roster-kpi ${tone}`}>
+      <strong>{value}</strong>
+      <span>{label}</span>
     </div>
   );
 }
@@ -2865,10 +3486,11 @@ function RosterPlanner({
 
 function RosterCalendarEvent({ shift, deleteShift }: { shift: RosterShift; deleteShift: (shiftId: string) => void }) {
   return (
-    <div className={`roster-calendar-event ${shift.response}`}>
+    <div className={`roster-calendar-event ${rosterResponseTone(shift)}`}>
       <div>
         <strong>{shift.start} {shift.staffName}</strong>
         <span>{shift.area}</span>
+        <RosterStatusChip shift={shift} />
       </div>
       <button aria-label={`Delete ${shift.staffName}'s shift on ${formatRosterDate(shift.date)}`} onClick={() => deleteShift(shift.id)}>
         <X size={13} />
@@ -2924,7 +3546,7 @@ function StaffRoster({ shifts, updateRosterResponse }: { shifts: RosterShift[]; 
               </button>
             </div>
           ) : (
-            <span className={`status-badge ${shift.response === 'accepted' ? 'green' : 'slate'}`}>{shift.response === 'accepted' ? 'Accepted' : 'Declined'}</span>
+            <RosterStatusChip shift={shift} />
           )}
         </div>
       ))}
@@ -2942,9 +3564,8 @@ function RosterShiftCard({ shift, onDelete }: { shift: RosterShift; onDelete?: (
       </div>
       <div className="roster-shift-meta">
         <strong>{shift.start} - {shift.end}</strong>
-        <span className={`status-dot ${shift.response === 'accepted' ? 'active' : shift.response === 'declined' ? 'paused' : 'pending'}`}>
-          {shift.response === 'sent' ? 'Sent' : shift.response === 'accepted' ? 'Accepted' : shift.response === 'declined' ? 'Declined' : 'Draft'}
-        </span>
+        <RosterStatusChip shift={shift} />
+        {(shift.respondedAt || shift.viewedAt || shift.sentAt) && <small>{shift.respondedAt ? `Responded ${shift.respondedAt}` : shift.viewedAt ? `Viewed ${shift.viewedAt}` : `Sent ${shift.sentAt}`}</small>}
         {onDelete && (
           <button className="roster-delete" aria-label={`Delete ${shift.staffName}'s shift on ${formatRosterDate(shift.date)}`} onClick={() => onDelete(shift.id)}>
             <X size={15} />
@@ -2968,25 +3589,81 @@ function rosterMonthLabel(date: string) {
   return parsed.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
 }
 
+function rosterResponseLabel(shift: RosterShift) {
+  if (shift.response === 'accepted') return 'Accepted';
+  if (shift.response === 'declined') return 'Declined';
+  if (shift.viewedAt) return 'Viewed';
+  if (shift.response === 'sent') return 'Pending';
+  return 'Draft';
+}
+
+function rosterResponseTone(shift: RosterShift) {
+  if (shift.response === 'accepted') return 'accepted';
+  if (shift.response === 'declined') return 'declined';
+  if (shift.viewedAt) return 'viewed';
+  if (shift.response === 'sent') return 'pending';
+  return 'draft';
+}
+
+function shiftNeedsRosterAttention(shift: RosterShift) {
+  if (shift.response === 'declined') return true;
+  if (shift.response !== 'sent') return false;
+  const shiftDate = new Date(`${shift.date}T00:00:00`);
+  if (Number.isNaN(shiftDate.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const daysAway = Math.ceil((shiftDate.getTime() - today.getTime()) / 86400000);
+  return daysAway <= 3;
+}
+
+function rosterActivity(shifts: RosterShift[]) {
+  return [...shifts]
+    .filter((shift) => shift.response !== 'draft')
+    .map((shift) => {
+      const tone = rosterResponseTone(shift);
+      const label = shift.response === 'accepted'
+        ? 'Shift accepted'
+        : shift.response === 'declined'
+          ? 'Shift declined'
+          : shift.viewedAt
+            ? 'Shift viewed'
+            : shiftNeedsRosterAttention(shift)
+              ? 'Pending too long'
+              : 'Shift pending';
+      const time = shift.respondedAt || shift.viewedAt || shift.sentAt || formatRosterDate(shift.date);
+      const icon = shift.response === 'accepted' ? '✓' : shift.response === 'declined' ? '!' : shift.viewedAt ? 'Seen' : '•';
+      return { shift, tone, label, time, icon };
+    })
+    .sort((a, b) => `${b.shift.respondedAt || b.shift.viewedAt || b.shift.sentAt || b.shift.date}`.localeCompare(`${a.shift.respondedAt || a.shift.viewedAt || a.shift.sentAt || a.shift.date}`));
+}
+
+function RosterStatusChip({ shift }: { shift: RosterShift }) {
+  return <span className={`roster-status-chip ${rosterResponseTone(shift)}`}>{rosterResponseLabel(shift)}</span>;
+}
+
 function WorkflowBoard({
   jobs,
   selectedJobId,
   setSelectedJobId,
   workflowStages,
+  staff = [],
+  updateJobStatus,
   compact = false
 }: {
   jobs: Job[];
   selectedJobId?: string;
   setSelectedJobId: (id: string) => void;
   workflowStages: Record<JobStatus, WorkflowStage>;
+  staff?: StaffMember[];
+  updateJobStatus?: (jobId: string, status: JobStatus) => void;
   compact?: boolean;
 }) {
   return (
-    <div className={compact ? 'workflow-board compact' : 'workflow-board'}>
+    <div className={compact ? 'workflow-board operational-board compact' : 'workflow-board operational-board'}>
       {statusFlow.map((status, index) => {
         const columnJobs = jobs.filter((job) => job.status === status);
         return (
-          <section className="workflow-column" key={status}>
+          <section className="workflow-column operational-lane" key={status}>
             <div className="workflow-column-header">
               <span>{index + 1}</span>
               <div>
@@ -2995,23 +3672,67 @@ function WorkflowBoard({
               </div>
             </div>
             <div className="workflow-cards">
-              {columnJobs.map((job) => (
-                <button key={job.id} className={`job-card ${selectedJobId === job.id ? 'selected' : ''}`} onClick={() => setSelectedJobId(job.id)}>
-                  <div>
-                    <strong>{job.customer}</strong>
-                    <span>{job.item}</span>
-                  </div>
-                  <div className="job-card-tags">
-                    <span>{job.serviceType}</span>
-                    <span className={job.priority === 'Urgent' ? 'priority urgent' : job.priority === 'Hold' ? 'priority hold' : 'priority'}>{job.priority}</span>
-                  </div>
-                  <div className="job-card-footer">
-                    <small>{job.id} · Due {job.due}</small>
-                    <PaymentBadge paid={job.paid} />
-                  </div>
-                </button>
-              ))}
-              {columnJobs.length === 0 && <p className="empty-column">Clear</p>}
+              {columnJobs.map((job) => {
+                const notification = latestNotification(job);
+                const nextStatus = nextJobStatus(job.status);
+                const assigned = assignedStaffForJob(job, staff);
+                const signal = operationalSignal(job, notification);
+                return (
+                  <article
+                    key={job.id}
+                    className={`job-card operational-card ${selectedJobId === job.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedJobId(job.id)}
+                  >
+                    <div className="order-card-header">
+                      <div className="order-identity">
+                        <span>{job.id}</span>
+                        <strong>{job.customer}</strong>
+                        <small>{job.phone}</small>
+                      </div>
+                      <div className="order-card-badges">
+                        <span className={job.priority === 'Urgent' ? 'priority urgent' : job.priority === 'Hold' ? 'priority hold' : 'priority'}>{job.priority}</span>
+                        <PaymentBadge paid={job.paid} />
+                      </div>
+                    </div>
+                    <div className="order-card-service">
+                      <strong>{job.item}</strong>
+                      <span>{job.serviceType} · {job.estimate}</span>
+                    </div>
+                    <div className="order-snapshot-grid">
+                      <div><span>Due</span><strong>{job.due}</strong></div>
+                      <div><span>Staff</span><strong>{assigned}</strong></div>
+                      <div><span>Updated</span><strong>{lastUpdateLabel(job)}</strong></div>
+                    </div>
+                    <div className={`job-notification ${notification.state}`}>
+                      <span>{notification.state === 'delivered' ? '✓' : notification.state === 'ready' ? '⌛' : notification.state === 'failed' ? '!' : '•'}</span>
+                      <div>
+                        <strong>{notification.label}{notification.time ? ` · ${notification.time}` : ''}</strong>
+                        <small>{notification.message}</small>
+                      </div>
+                    </div>
+                    <div className="order-live-row">
+                      <span className={`order-signal ${signal.tone}`}>{signal.label}</span>
+                      {job.notes && <span className="notes-chip"><ClipboardList size={13} /> Notes</span>}
+                    </div>
+                    <div className="order-card-actions">
+                      <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedJobId(job.id); }}>Open details</button>
+                      {updateJobStatus && nextStatus && (
+                        <button
+                          type="button"
+                          className="primary-mini"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            updateJobStatus(job.id, nextStatus);
+                          }}
+                        >
+                          {workflowStages[nextStatus].verb}
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+              {columnJobs.length === 0 && <p className="empty-column operational-empty">No orders in this stage</p>}
             </div>
           </section>
         );
@@ -3084,27 +3805,40 @@ function MasterSmsSettingsPanel({
   );
 }
 
-function BusinessSmsStatus({ settings, notice, sendTestSms }: { settings: MasterSmsSettings; notice: string; sendTestSms: () => void }) {
+function BusinessSmsStatus({ settings, notice, sendTestSms, logs }: { settings: MasterSmsSettings; notice: string; sendTestSms: () => void; logs: SmsLog[] }) {
   const connected = settings.status === 'connected';
+  const lastSent = logs[0];
   return (
-    <div className="messaging-setup">
-      <div className={connected ? 'messaging-status connected' : 'messaging-status'}>
+    <div className="business-messaging">
+      <div className={connected ? 'sms-health active' : 'sms-health offline'}>
+        <span />
         <div>
-          <strong>{connected ? 'SMS messaging enabled' : 'SMS unavailable — contact platform admin'}</strong>
-          <p>{connected ? `Messages are sent through Verola's ${providerName(settings.provider)} master connection. Your templates and workflow buttons still control the customer message content.` : 'You can still update job statuses and copy message previews. Super Admin must configure the platform SMS provider before sending.'}</p>
+          <strong>{connected ? 'SMS active' : 'SMS unavailable'}</strong>
+          <small>{connected ? 'Workflow buttons can send customer updates.' : 'Statuses still work. Copy previews until SMS is enabled.'}</small>
         </div>
-        {connected && <CheckCircle2 size={22} />}
       </div>
-      <div className="settings-stack">
-        <Setting label="Provider access" value="Managed by Super Admin" />
-        <Setting label="API keys" value="Hidden from business admins" />
-        <Setting label="Audit logs" value="Tracked per business and message" />
-        <Setting label="Current status" value={connected ? `${providerName(settings.provider)} connected` : 'Not configured'} />
+
+      <div className="sms-preview-mini">
+        <span className="eyebrow">SMS preview</span>
+        <p>Update a job status to preview the message before it goes to the customer.</p>
+        <button onClick={sendTestSms}>{connected ? 'Send test update' : 'Check SMS status'}</button>
       </div>
-      <div className="messaging-actions">
-        <button onClick={sendTestSms}>{connected ? 'Send Test Update' : 'Check SMS Status'}</button>
+
+      <div className="last-sms-card">
+        <span className="eyebrow">Last sent</span>
+        {lastSent ? (
+          <div className="last-sms-row">
+            <MessageSquareText size={18} />
+            <div>
+              <strong>{lastSent.recipient}</strong>
+              <small>{lastSent.templateKey} · {lastSent.timestamp} · {lastSent.status}</small>
+            </div>
+          </div>
+        ) : (
+          <p>No customer SMS has been sent yet.</p>
+        )}
       </div>
-      {notice && <p className="messaging-notice">{notice}</p>}
+      {notice && <p className="messaging-notice compact">{notice}</p>}
     </div>
   );
 }
@@ -3154,6 +3888,163 @@ function providerName(provider: SmsProvider | null) {
   return 'No provider';
 }
 
+function nowLabel() {
+  return new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
+}
+
+function simpleStageLabel(status: JobStatus, workflowStages?: Record<JobStatus, WorkflowStage>) {
+  const fallback: Record<JobStatus, string> = {
+    collected: 'Received',
+    in_progress: 'In Progress',
+    ready_for_pickup: 'Ready',
+    completed: 'Completed'
+  };
+  const label = workflowStages?.[status]?.label || fallback[status];
+  return status === 'collected' && label === 'Collected' ? 'Received' : label;
+}
+
+function simpleStageAction(status: JobStatus) {
+  const labels: Record<JobStatus, string> = {
+    collected: 'Move to Received',
+    in_progress: 'Move to In Progress',
+    ready_for_pickup: 'Move to Ready',
+    completed: 'Complete Order'
+  };
+  return labels[status];
+}
+
+function simpleOrderFilterMatches(job: Job, filter: OrderFilter) {
+  if (filter === 'collected') return job.status === 'collected';
+  if (filter === 'in_progress') return job.status === 'in_progress';
+  if (filter === 'ready_for_pickup') return job.status === 'ready_for_pickup';
+  if (filter === 'completed') return job.status === 'completed';
+  return true;
+}
+
+function orderFilterMatches(job: Job, filter: OrderFilter) {
+  if (filter === 'collected') return job.status === 'collected';
+  if (filter === 'in_progress') return job.status === 'in_progress';
+  if (filter === 'ready_for_pickup') return job.status === 'ready_for_pickup';
+  if (filter === 'completed') return job.status === 'completed';
+  if (filter === 'unpaid') return !job.paid;
+  if (filter === 'overdue') return isOrderOverdue(job);
+  if (filter === 'sms_failed') return latestNotification(job).state === 'failed';
+  return true;
+}
+
+function sortOperationalJobs(jobs: Job[], sort: OrderSort) {
+  return [...jobs].sort((a, b) => {
+    if (sort === 'stage') return statusFlow.indexOf(a.status) - statusFlow.indexOf(b.status);
+    if (sort === 'customer') return a.customer.localeCompare(b.customer);
+    if (sort === 'newest') return updateSortWeight(b) - updateSortWeight(a);
+    if (sort === 'overdue') return Number(isOrderOverdue(b)) - Number(isOrderOverdue(a)) || dueSortWeight(a.due) - dueSortWeight(b.due);
+    if (sort === 'unpaid') return Number(!b.paid) - Number(!a.paid) || dueSortWeight(a.due) - dueSortWeight(b.due);
+    return dueSortWeight(a.due) - dueSortWeight(b.due);
+  });
+}
+
+function updateSortWeight(job: Job) {
+  const label = lastUpdateLabel(job).toLowerCase();
+  if (label.includes('just now')) return 999;
+  if (label.includes('am') || label.includes('pm')) return 500;
+  if (label.includes('today')) return 400;
+  if (label.includes('yesterday')) return 300;
+  return 100;
+}
+
+function dueSortWeight(due: string) {
+  const lower = due.toLowerCase();
+  if (lower.includes('yesterday') || lower.includes('overdue')) return 0;
+  if (lower.includes('today')) return 1;
+  if (lower.includes('tomorrow')) return 2;
+  return 3;
+}
+
+function isOrderOverdue(job: Job) {
+  const due = job.due.toLowerCase();
+  return job.status !== 'completed' && (due.includes('yesterday') || due.includes('overdue'));
+}
+
+function nextJobStatus(status: JobStatus) {
+  const index = statusFlow.indexOf(status);
+  return index >= 0 && index < statusFlow.length - 1 ? statusFlow[index + 1] : undefined;
+}
+
+function assignedStaffForJob(job: Job, staff: StaffMember[]) {
+  const activeStaff = staff.filter((member) => member.active);
+  if (!activeStaff.length) return 'Unassigned';
+  const seed = job.id.split('').reduce((total, char) => total + char.charCodeAt(0), 0);
+  return activeStaff[seed % activeStaff.length].name;
+}
+
+function lastUpdateLabel(job: Job) {
+  return job.updates[0]?.at || 'No activity';
+}
+
+function completionTime(job: Job) {
+  return job.updates.find((update) => update.status === 'completed')?.at || job.paidAt || lastUpdateLabel(job);
+}
+
+function operationalSignal(job: Job, notification: JobNotification) {
+  if (job.status === 'completed') return { label: 'Collected by customer', tone: 'done' };
+  if (job.status === 'ready_for_pickup' && !job.paid) return { label: 'Awaiting payment', tone: 'warn' };
+  if (job.status === 'ready_for_pickup') return { label: 'Awaiting collection', tone: 'ready' };
+  if (notification.state === 'delivered') return { label: 'Customer notified', tone: 'good' };
+  if (notification.state === 'ready') return { label: 'SMS ready to send', tone: 'ready' };
+  if (notification.state === 'failed') return { label: 'Message not sent', tone: 'warn' };
+  if (isOrderOverdue(job)) return { label: 'Overdue', tone: 'warn' };
+  return { label: job.status === 'in_progress' ? 'Work underway' : 'Waiting to start', tone: 'neutral' };
+}
+
+function latestNotification(job: Job): JobNotification {
+  const sent = job.updates.find((update) => update.kind === 'sms' || update.sms.toLowerCase().includes('customer sms sent'));
+  if (sent) {
+    return {
+      state: 'delivered',
+      label: 'SMS delivered',
+      time: sent.at,
+      message: sent.sms.replace(/^Customer SMS sent(?: via [^:]+)?:\s*/i, '')
+    };
+  }
+
+  const failed = job.updates.find((update) => update.kind === 'sms_failed' || update.sms.toLowerCase().includes('sms unavailable'));
+  if (failed) {
+    return {
+      state: 'failed',
+      label: 'SMS unavailable',
+      time: failed.at,
+      message: failed.sms
+    };
+  }
+
+  const ready = job.updates.find((update) => update.sms.toLowerCase().includes('sms preview ready'));
+  if (ready) {
+    return {
+      state: 'ready',
+      label: 'SMS preview ready',
+      time: ready.at,
+      message: ready.sms.replace(/^Status updated\. SMS preview ready:\s*/i, '')
+    };
+  }
+
+  const statusMessage = job.updates.find((update) => update.status && update.sms && update.kind !== 'sms_failed');
+  if (statusMessage) {
+    return {
+      state: 'delivered',
+      label: 'SMS delivered',
+      time: statusMessage.at,
+      message: statusMessage.sms
+    };
+  }
+
+  return {
+    state: 'none',
+    label: 'No SMS yet',
+    time: '',
+    message: 'Update a status to prepare a customer message.'
+  };
+}
+
 function SmsPreviewModal({
   preview,
   provider,
@@ -3172,7 +4063,7 @@ function SmsPreviewModal({
       <div className="sms-modal">
         <span className="eyebrow">SMS preview</span>
         <h2>Send customer update?</h2>
-        <p>{providerName(provider)} will send this SMS through the platform master connection. This event will be logged against the business for audit and billing.</p>
+        <p>Review the message before it goes to the customer. The order card will show the sent time once confirmed.</p>
         <div className="sms-preview-box">
           <strong>{preview.customer} · {preview.phone}</strong>
           <p>{preview.message}</p>
@@ -3248,6 +4139,8 @@ function JobDetail({
   compact?: boolean;
 }) {
   const [draftNote, setDraftNote] = useState('');
+  const notification = job ? latestNotification(job) : undefined;
+  const signal = job && notification ? operationalSignal(job, notification) : undefined;
 
   if (!job) {
     return (
@@ -3259,12 +4152,19 @@ function JobDetail({
   }
 
   return (
-    <div className="job-detail">
-      <div className="job-title">
+    <aside className="job-detail order-drawer">
+      <div className="job-detail-topline">
+        <span className="eyebrow">Order details</span>
+        {!compact && <a href={`/track/${encodeURIComponent(job.id)}`}>Customer view</a>}
+      </div>
+
+      <div className="order-summary-card">
         <div>
-          <span className="eyebrow">{job.id} · Due {job.due}</span>
+          <span>{job.id} · Due {job.due}</span>
           <h2>{job.customer}</h2>
-          <p>{job.phone} · {job.item}</p>
+          <p>{job.phone}</p>
+          <strong>{job.item}</strong>
+          {signal && <span className={`order-signal ${signal.tone}`}>{signal.label}</span>}
         </div>
         <div className="job-title-badges">
           <PaymentBadge paid={job.paid} />
@@ -3272,10 +4172,15 @@ function JobDetail({
         </div>
       </div>
 
-      {!compact && (
-        <div className="customer-link-row">
-          <span>Customer tracking page</span>
-          <a href={`/track/${encodeURIComponent(job.id)}`}>Open customer view</a>
+      {notification && (
+        <div className={`latest-notification-card ${notification.state}`}>
+          <div>
+            <span>{notification.state === 'delivered' ? '✓' : notification.state === 'ready' ? '⌛' : notification.state === 'failed' ? '!' : '•'}</span>
+            <div>
+              <strong>{notification.label}{notification.time ? ` at ${notification.time}` : ''}</strong>
+              <p>{notification.message}</p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -3288,6 +4193,11 @@ function JobDetail({
       </div>
 
       {updateJobStatus ? (
+        <>
+        <div className="detail-section-title">
+          <strong>Quick actions</strong>
+          <span>Status changes notify the customer</span>
+        </div>
         <div className="status-buttons">
           {statusFlow.map((status) => (
             <button key={status} className={`status-action ${job.status === status ? 'current' : ''}`} onClick={() => updateJobStatus(job.id, status)}>
@@ -3295,10 +4205,15 @@ function JobDetail({
               {status === 'in_progress' && <Wrench size={18} />}
               {status === 'ready_for_pickup' && <Send size={18} />}
               {status === 'completed' && <Check size={18} />}
-              <span>{workflowStages[status].verb}</span>
+              <span>{simpleStageAction(status)}</span>
             </button>
           ))}
+          <button className="status-action sms-action" onClick={() => updateJobStatus(job.id, job.status)}>
+            <MessageSquareText size={18} />
+            <span>Send SMS</span>
+          </button>
         </div>
+        </>
       ) : (
         <div className="progress-readonly">
           {statusFlow.map((status, index) => (
@@ -3312,7 +4227,10 @@ function JobDetail({
 
       {!compact && (
         <div className="job-note">
-          <strong>Notes</strong>
+          <div className="detail-section-title">
+            <strong>Notes</strong>
+            <span>Internal only</span>
+          </div>
           {job.notes.split('\n').map((line, index) => (
             <p key={`${line}-${index}`}>{line}</p>
           ))}
@@ -3334,17 +4252,21 @@ function JobDetail({
       </div>
 
       <div className="timeline">
+        <div className="detail-section-title">
+          <strong>Activity timeline</strong>
+          <span>{job.updates.length} updates</span>
+        </div>
         {job.updates.map((update, index) => (
-          <div className="timeline-item" key={`${update.status}-${update.at}-${index}`}>
-            <span />
+          <div className={`timeline-item ${update.kind ?? 'status'}`} key={`${update.status}-${update.at}-${index}`}>
+            <span>{update.kind === 'sms' ? <MessageSquareText size={11} /> : update.kind === 'payment' ? <CreditCard size={11} /> : update.kind === 'note' ? <ClipboardList size={11} /> : <Check size={11} />}</span>
             <div>
-              <strong>{update.kind === 'note' ? 'Note added' : update.kind === 'payment' ? 'Payment update' : workflowStages[update.status ?? job.status].label} · {update.at}</strong>
+              <strong>{update.kind === 'sms' ? 'SMS sent' : update.kind === 'sms_failed' ? 'SMS not sent' : update.kind === 'note' ? 'Note added' : update.kind === 'payment' ? 'Payment update' : workflowStages[update.status ?? job.status].label} · {update.at}</strong>
               <p>{update.sms}</p>
             </div>
           </div>
         ))}
       </div>
-    </div>
+    </aside>
   );
 }
 
@@ -3383,29 +4305,33 @@ function Setting({ label, value }: { label: string; value: string }) {
 function BrandMark({ className = '' }: { className?: string }) {
   const brand = useBranding();
   const initials = brand.name.split(' ').map((word) => word[0]).join('').slice(0, 2) || 'V';
-  const logoUrl = brand.appIconUrl || brand.logoUrl;
+  const logoUrl = brand.logoUrl || brand.appIconUrl;
+  const iconUrl = brand.appIconUrl || brand.logoUrl;
   return (
-    <div className={`business-logo ${className}`} style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
+    <div className={`business-logo image-logo ${className}`} style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
       <span>{initials}</span>
-      {logoUrl && <img src={logoUrl} alt={`${brand.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+      {logoUrl && <img className="logo-wordmark" src={logoUrl} alt={`${brand.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+      {iconUrl && <img className="logo-icon" src={iconUrl} alt="" aria-hidden="true" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
     </div>
   );
 }
 
 function BusinessLogo({ business, className = '' }: { business: Business; className?: string }) {
   const initials = business.name.split(' ').map((word) => word[0]).join('').slice(0, 2) || 'V';
-  const logoUrl = business.logoUrl || platformBrand.appIconUrl || platformBrand.logoUrl;
+  const logoUrl = business.logoUrl || platformBrand.logoUrl || platformBrand.appIconUrl;
+  const iconUrl = business.logoUrl || platformBrand.appIconUrl || logoUrl;
 
   return (
-    <div className={`business-logo ${className}`} style={{ '--brand': business.primary, '--accent': business.accent } as React.CSSProperties}>
+    <div className={`business-logo image-logo ${className}`} style={{ '--brand': business.primary, '--accent': business.accent } as React.CSSProperties}>
       <span>{initials}</span>
-      {logoUrl && <img src={logoUrl} alt={`${business.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+      {logoUrl && <img className="logo-wordmark" src={logoUrl} alt={`${business.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+      {iconUrl && <img className="logo-icon" src={iconUrl} alt="" aria-hidden="true" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
     </div>
   );
 }
 
 function StatusBadge({ status, workflowStages }: { status: JobStatus; workflowStages: Record<JobStatus, WorkflowStage> }) {
-  return <span className={`status-badge ${workflowStages[status].tone}`}>{workflowStages[status].label}</span>;
+  return <span className={`status-badge ${workflowStages[status].tone}`}>{simpleStageLabel(status, workflowStages)}</span>;
 }
 
 function PaymentBadge({ paid }: { paid: boolean }) {
