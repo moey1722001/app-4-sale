@@ -4,13 +4,11 @@ import {
   Activity,
   Bell,
   Building2,
-  CalendarClock,
   CalendarPlus,
   Check,
   CheckCircle2,
   ChevronRight,
   ClipboardList,
-  Clock3,
   CreditCard,
   History,
   LockKeyhole,
@@ -26,7 +24,6 @@ import {
   ShieldCheck,
   Shirt,
   Sparkles,
-  UserPlus,
   Users,
   X,
   Wrench
@@ -49,9 +46,7 @@ import { BrandProvider, OrganisationBrand, platformBrand, useBranding } from './
 type Portal = 'super' | 'admin' | 'staff';
 type UserRole = Portal;
 type JobStatus = 'collected' | 'in_progress' | 'ready_for_pickup' | 'completed';
-type OrderFilter = 'all' | 'collected' | 'in_progress' | 'ready_for_pickup' | 'completed' | 'overdue' | 'unpaid' | 'sms_failed';
-type OrderSort = 'due' | 'newest' | 'overdue' | 'unpaid' | 'stage' | 'customer';
-type OrderViewMode = 'list' | 'pipeline';
+type OrderFilter = 'all' | 'collected' | 'in_progress' | 'ready_for_pickup' | 'completed';
 type BusinessJobsView = 'active' | 'completed' | 'history';
 type SmsProvider = 'clicksend' | 'telnyx';
 type SmsSetupStatus = 'not_configured' | 'connected' | 'failed';
@@ -142,13 +137,6 @@ type Job = {
   updates: Array<{ status?: JobStatus; at: string; sms: string; kind?: 'status' | 'note' | 'payment' | 'sms' | 'sms_failed' }>;
 };
 
-type SmsPreview = {
-  jobId: string;
-  customer: string;
-  phone: string;
-  status: JobStatus;
-  message: string;
-};
 
 type MasterSmsSettings = {
   provider: SmsProvider;
@@ -551,7 +539,7 @@ const demoHighlights = [
   'White-label dashboard for laundromats, mechanics, groomers, cleaners, clinics, and repair shops',
   'Simple job workflow: collected, in progress, ready for pickup, completed',
   'Customer updates are previewed, logged, and sent through the platform SMS provider managed by Super Admin',
-  'Staff can see today’s work, notes, payments, rosters, and shift clock status'
+  "Staff can see today's work, notes, payments, rosters, and shift clock status"
 ];
 const defaultMasterSmsSettings: MasterSmsSettings = {
   provider: 'clicksend',
@@ -571,9 +559,22 @@ function portalFromPath(pathname: string): Portal {
   return 'admin';
 }
 
+function isInvitePath(pathname: string) {
+  return pathname.startsWith('/invite/') || pathname.startsWith('/accept-invite') || pathname.startsWith('/setup-business/');
+}
+
 function inviteTokenFromPath(pathname: string) {
-  const match = pathname.match(/^\/(?:invite|setup-business)\/([^/]+)/);
-  return match ? decodeURIComponent(match[1]) : '';
+  // Legacy path format: /invite/TOKEN or /setup-business/TOKEN
+  const legacyMatch = pathname.match(/^\/(?:invite|setup-business)\/([^/]+)/);
+  if (legacyMatch) return decodeURIComponent(legacyMatch[1]);
+  // New magic URL format: /accept-invite/INVITE_ID (Appwrite appends ?userId=&secret=)
+  const idMatch = pathname.match(/^\/accept-invite\/([^/?]+)/);
+  if (idMatch) return decodeURIComponent(idMatch[1]);
+  // Copy-link fallback: /accept-invite?token=TOKEN
+  if (pathname === '/accept-invite' || pathname.startsWith('/accept-invite?')) {
+    return new URLSearchParams(window.location.search).get('token') ?? '';
+  }
+  return '';
 }
 
 function getInitialPath() {
@@ -843,19 +844,21 @@ function brandFromBusiness(business?: Business): OrganisationBrand {
   };
 }
 
-function inviteFromUrl(inviteId: string): OrganisationInvite | undefined {
+function inviteFromUrl(tokenOrId: string): OrganisationInvite | undefined {
   const params = new URLSearchParams(window.location.search);
-  const businessName = params.get('business');
-  const adminEmail = params.get('email');
-  if (!inviteId || !businessName || !adminEmail) return undefined;
-
+  // Query-param invite (copy-link format): /accept-invite?token=TOKEN&business=...&email=...
+  const business = params.get('business');
+  const email = params.get('email');
+  const token = params.get('token') || tokenOrId;
+  const inviteId = params.get('inviteId') || tokenOrId;
+  if (!business || !email) return undefined;
   return {
     id: inviteId,
-    token: inviteId,
-    businessId: params.get('businessId') || businessIdFromName(businessName),
-    businessName,
+    token,
+    businessId: params.get('businessId') || businessIdFromName(business),
+    businessName: business,
     contactName: params.get('contact') || 'Business owner',
-    adminEmail,
+    adminEmail: email,
     phone: params.get('phone') || '',
     role: 'business_admin',
     status: 'pending',
@@ -865,14 +868,20 @@ function inviteFromUrl(inviteId: string): OrganisationInvite | undefined {
   };
 }
 
+function getAppBaseUrl() {
+  if (typeof window === 'undefined') return 'https://verolaa.vercel.app';
+  const origin = window.location.origin;
+  const hostname = new URL(origin).hostname;
+  // On Vercel preview deployments, always use the stable production URL
+  if (hostname.startsWith('verolaa-') && hostname.endsWith('.vercel.app')) return 'https://verolaa.vercel.app';
+  const configured = appBaseUrl && !appBaseUrl.includes('your-verola-domain.com') ? appBaseUrl : '';
+  return origin || configured || 'https://verolaa.vercel.app';
+}
+
 function buildInviteUrl(invite: OrganisationInvite) {
-  const runtimeOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-  const runtimeHostname = runtimeOrigin ? new URL(runtimeOrigin).hostname : '';
-  const publicVercelOrigin = 'https://verolaa.vercel.app';
-  const isProtectedVercelDeployment = runtimeHostname.startsWith('verolaa-') && runtimeHostname.endsWith('.vercel.app');
-  const configuredBaseUrl = appBaseUrl && !appBaseUrl.includes('your-verola-domain.com') ? appBaseUrl : '';
-  const baseUrl = isProtectedVercelDeployment ? publicVercelOrigin : (runtimeOrigin || configuredBaseUrl || publicVercelOrigin);
+  const baseUrl = getAppBaseUrl();
   const params = new URLSearchParams({
+    token: invite.token,
     businessId: invite.businessId,
     business: invite.businessName,
     email: invite.adminEmail,
@@ -880,10 +889,10 @@ function buildInviteUrl(invite: OrganisationInvite) {
     role: invite.role,
     expires: invite.expiresAt,
     created: invite.createdAt,
-    source: 'verola'
+    inviteId: invite.id,
   });
   if (invite.phone) params.set('phone', invite.phone);
-  return `${baseUrl}/invite/${encodeURIComponent(invite.token)}?${params.toString()}`;
+  return `${baseUrl}/accept-invite?${params.toString()}`;
 }
 
 function buildPersonalisedInviteMessage(invite: OrganisationInvite) {
@@ -934,6 +943,7 @@ function fileToDataUrl(file: File) {
 function App() {
   const initialPath = getInitialPath();
   const isOverviewPath = initialPath === '/' || initialPath.startsWith('/overview');
+  const isInviteAcceptPath = isInvitePath(initialPath);
   const initialPortal = portalFromPath(initialPath);
   const [portal, setPortal] = useState<Portal>(() => portalFromPath(initialPath));
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => readStoredValue<AuthUser | null>(authStorageKey, null));
@@ -1004,7 +1014,6 @@ function App() {
   const [rosterArea, setRosterArea] = useState('Front counter');
   const [workflowStages, setWorkflowStages] = useState<Record<JobStatus, WorkflowStage>>(() => readStoredValue(workflowStorageKey, defaultWorkflowStages));
   const [smsNotice, setSmsNotice] = useState('');
-  const [smsPreview, setSmsPreview] = useState<SmsPreview | null>(null);
   const [workflowToast, setWorkflowToast] = useState<WorkflowToast | null>(null);
   const [rosterToast, setRosterToast] = useState<WorkflowToast | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -1051,7 +1060,13 @@ function App() {
   const canPreviewPortals = Boolean(authUser && (authUser.role === 'super' || import.meta.env.DEV || !hasAppwriteConfig));
   const visiblePortals = canPreviewPortals ? (Object.keys(portalMeta) as Portal[]) : authUser ? [authUser.role] : [];
   const activeInviteToken = inviteTokenFromPath(currentPath);
-  const activeInvite = activeInviteToken ? organisationInvites.find((invite) => invite.token === activeInviteToken) ?? inviteFromUrl(activeInviteToken) : undefined;
+  const activeInvite = activeInviteToken
+    ? (
+      organisationInvites.find((invite) => invite.token === activeInviteToken)
+      || organisationInvites.find((invite) => invite.id === activeInviteToken)
+      || inviteFromUrl(activeInviteToken)
+    )
+    : undefined;
   const inviteBusiness = activeInvite ? businesses.find((business) => business.id === activeInvite.businessId) ?? businessFromInvite(activeInvite) : undefined;
   const customerTrackJobId = currentPath.match(/^\/track\/([^/]+)/)?.[1] ? decodeURIComponent(currentPath.match(/^\/track\/([^/]+)/)?.[1] ?? '') : '';
   const customerTrackJob = customerTrackJobId ? jobs.find((job) => job.id === customerTrackJobId) : undefined;
@@ -1225,14 +1240,16 @@ function App() {
     if (!activeInviteToken || activeInvite || !hasAppwriteConfig || !appwriteInviteFunctionId) return;
 
     let cancelled = false;
-    debugInvite('invite lookup requested', { token: activeInviteToken });
+    // Determine if activeInviteToken looks like an invite ID (INV-...) or a hex token
+    const isInviteId = /^INV-/.test(activeInviteToken) || (activeInviteToken.length < 40 && !/^[0-9a-f]{40,}$/i.test(activeInviteToken));
+    const action = isInviteId ? 'lookup_invite_by_id' : 'lookup_invite';
+    const body = isInviteId ? { action, inviteId: activeInviteToken } : { action, token: activeInviteToken };
+
+    debugInvite('invite lookup requested', { token: activeInviteToken, action });
     functions.createExecution(
       appwriteInviteFunctionId,
-      JSON.stringify({ action: 'lookup_invite', token: activeInviteToken }),
-      false,
-      '/',
-      ExecutionMethod.POST,
-      { 'content-type': 'application/json' }
+      JSON.stringify(body),
+      false, '/', ExecutionMethod.POST, { 'content-type': 'application/json' }
     )
       .then((execution) => {
         if (cancelled) return;
@@ -1240,8 +1257,8 @@ function App() {
         const payload = responseBody ? JSON.parse(responseBody) as { invite?: OrganisationInvite } : {};
         if (payload.invite) {
           const invite = normalizeInvite(payload.invite);
-          setOrganisationInvites((current) => [invite, ...current.filter((item) => item.token !== invite.token)]);
-          debugInvite('invite lookup success', { token: invite.token, businessId: invite.businessId });
+          setOrganisationInvites((current) => [invite, ...current.filter((item) => item.id !== invite.id && item.token !== invite.token)]);
+          debugInvite('invite lookup success', { id: invite.id, token: invite.token, businessId: invite.businessId });
         } else {
           debugInvite('invite lookup failure', { token: activeInviteToken });
         }
@@ -1339,7 +1356,7 @@ function App() {
         const execution = await functions.createExecution(
           appwriteInviteFunctionId,
           JSON.stringify({
-            action: 'send_invite_email',
+            action: 'send_invite',
             inviteId: invite.id,
             token: invite.token,
             businessId: invite.businessId,
@@ -1360,9 +1377,12 @@ function App() {
           { 'content-type': 'application/json' }
         );
         const result = execution as { responseStatusCode?: number; responseBody?: string; status?: string };
-        const payload = result.responseBody ? JSON.parse(result.responseBody) as { emailSent?: boolean; emailConfigured?: boolean; error?: string } : {};
-        if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.emailSent === false || payload.emailConfigured === false || payload.error) {
-          throw new Error(payload.error || 'Invite email provider is not configured.');
+        const payload = result.responseBody ? JSON.parse(result.responseBody) as { emailSent?: boolean; emailConfigured?: boolean; error?: string; emailError?: string } : {};
+        if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error) {
+          throw new Error(payload.error || 'Invite email could not be sent.');
+        }
+        if (!payload.emailSent) {
+          throw new Error(payload.emailError || 'Invite email could not be sent via Appwrite.');
         }
         setOrganisationInvites((current) => current.map((item) => (item.id === invite.id ? { ...item, sentAt: 'Email sent just now' } : item)));
         setInviteNotice(`Invite email sent to ${invite.adminEmail}.`);
@@ -1404,16 +1424,17 @@ function App() {
   }
 
   async function completeInviteSetup(inviteToken: string) {
-    const invite = organisationInvites.find((item) => item.token === inviteToken) ?? inviteFromUrl(inviteToken);
+    const invite = organisationInvites.find((item) => item.token === inviteToken)
+      || organisationInvites.find((item) => item.id === inviteToken)
+      || inviteFromUrl(inviteToken);
     if (!invite) return;
+
     const status = inviteStatus(invite);
     const adminName = setupDraft.name.trim();
     const password = setupDraft.password.trim();
 
-    debugInvite(status === 'pending' ? 'invite lookup success' : 'invite lookup blocked', {
-      token: invite.token,
-      businessId: invite.businessId,
-      status
+    debugInvite(status === 'pending' ? 'invite accept started' : 'invite accept blocked', {
+      id: invite.id, token: invite.token, businessId: invite.businessId, status
     });
 
     if (status !== 'pending') {
@@ -1427,55 +1448,70 @@ function App() {
     }
 
     try {
+      // Step 1: Create Appwrite session via magic URL params if present
+      const urlParams = new URLSearchParams(window.location.search);
+      const magicUserId = urlParams.get('userId');
+      const magicSecret = urlParams.get('secret');
+
+      if (hasAppwriteConfig && magicUserId && magicSecret) {
+        try {
+          await account.updateMagicURLSession(magicUserId, magicSecret);
+          await account.updateName(adminName);
+          await account.updatePassword(password);
+          debugInvite('appwrite magic URL session created', { userId: magicUserId });
+        } catch (sessionError) {
+          debugInvite('magic URL session failed, continuing with local setup', {
+            error: sessionError instanceof Error ? sessionError.message : sessionError
+          });
+        }
+      }
+
+      // Step 2: Accept invite via function (creates/links Appwrite user, marks accepted)
       if (hasAppwriteConfig && appwriteInviteFunctionId) {
         const execution = await functions.createExecution(
           appwriteInviteFunctionId,
           JSON.stringify({
             action: 'accept_invite',
+            inviteId: invite.id,
             token: invite.token,
             adminName,
             adminEmail: invite.adminEmail,
             password,
             businessId: invite.businessId
           }),
-          false,
-          '/',
-          ExecutionMethod.POST,
-          { 'content-type': 'application/json' }
+          false, '/', ExecutionMethod.POST, { 'content-type': 'application/json' }
         );
         const result = execution as { responseStatusCode?: number; responseBody?: string };
         const payload = result.responseBody ? JSON.parse(result.responseBody) as { accepted?: boolean; error?: string } : {};
-        if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.accepted === false || payload.error) {
+        if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error) {
           throw new Error(payload.error || 'Invite setup function failed.');
         }
       }
     } catch (error) {
-      debugInvite('invite accept failed, continuing with local setup fallback', {
-        token: invite.token,
-        businessId: invite.businessId,
-        error: error instanceof Error ? error.message : error
+      debugInvite('invite accept error, continuing with local setup', {
+        id: invite.id, error: error instanceof Error ? error.message : error
       });
     }
 
+    // Local state update (always runs even if Appwrite calls fail)
     setOrganisationInvites((current) => {
-      const exists = current.some((item) => item.token === inviteToken);
-      if (exists) return current.map((item) => (item.token === inviteToken ? { ...item, status: 'accepted', acceptedAt: new Date().toISOString() } : item));
+      const exists = current.some((item) => item.id === invite.id || item.token === invite.token);
+      if (exists) return current.map((item) =>
+        (item.id === invite.id || item.token === invite.token)
+          ? { ...item, status: 'accepted', acceptedAt: new Date().toISOString() }
+          : item
+      );
       return [{ ...invite, status: 'accepted', sentAt: 'Accepted from invite link' }, ...current];
     });
     setBusinesses((current) => (current.some((business) => business.id === invite.businessId) ? current : [businessFromInvite(invite), ...current]));
-    const user: AuthUser = {
-      email: invite.adminEmail,
-      name: adminName,
-      role: 'admin',
-      businessId: invite.businessId
-    };
+    const user: AuthUser = { email: invite.adminEmail, name: adminName, role: 'admin', businessId: invite.businessId };
     setCreatedUsers((current) => [user, ...current.filter((candidate) => candidate.email !== user.email)]);
     setAuthUser(user);
     setActiveBusinessId(invite.businessId);
     setPortal('admin');
     setLoginError('');
     setSetupDraft({ name: '', password: '', error: '' });
-    debugInvite('invite accepted and account linked to organisation', { token: invite.token, businessId: invite.businessId, email: invite.adminEmail });
+    debugInvite('invite accepted and account linked', { id: invite.id, businessId: invite.businessId, email: invite.adminEmail });
     window.history.replaceState({}, '', '/business-admin');
     setCurrentPath('/business-admin');
   }
@@ -1744,7 +1780,6 @@ function App() {
     );
 
     if (smsConnected) {
-      setSmsPreview(null);
       setSmsLogs((logs) => [
         {
           id: `sms-${Date.now()}`,
@@ -1759,51 +1794,12 @@ function App() {
         },
         ...logs
       ]);
-      setSmsNotice(status === 'completed' ? 'Order archived to today’s completed jobs.' : `Customer notified: ${targetJob.customer}.`);
-      showWorkflowToast(status === 'completed' ? 'Order archived to today’s completed jobs' : 'Customer notified');
+      setSmsNotice(status === 'completed' ? 'Order completed and archived.' : `Customer notified: ${targetJob.customer}.`);
+      showWorkflowToast(status === 'completed' ? 'Order completed -- moved to Today\'s Completed' : `SMS sent · ${targetJob.customer} notified`);
     } else {
-      setSmsPreview(null);
-      setSmsNotice(status === 'completed' ? 'Order archived to today’s completed jobs. SMS was unavailable.' : 'SMS unavailable. Status updated, but no customer message was sent. Contact the platform admin.');
-      showWorkflowToast(status === 'completed' ? 'Order archived to today’s completed jobs' : 'Status updated. SMS unavailable.', status === 'completed' ? 'success' : 'warning');
+      setSmsNotice(status === 'completed' ? 'Order completed. SMS unavailable.' : 'Status updated. SMS unavailable -- contact the platform admin.');
+      showWorkflowToast(status === 'completed' ? 'Order completed' : 'Status updated -- SMS unavailable', status === 'completed' ? 'success' : 'warning');
     }
-  }
-
-  function sendPreviewSms() {
-    if (!smsPreview) return;
-    const sentAt = nowLabel();
-    setJobs((currentJobs) =>
-      currentJobs.map((job) =>
-        job.id === smsPreview.jobId
-          ? {
-              ...job,
-              updates: [{ status: smsPreview.status, at: sentAt, kind: 'sms', sms: `Customer SMS sent: ${smsPreview.message}` }, ...job.updates]
-            }
-          : job
-      )
-    );
-    setSmsLogs((logs) => [
-      {
-        id: `sms-${Date.now()}`,
-        businessId: activeBusiness.id,
-        businessName: activeBusiness.name,
-        recipient: smsPreview.phone,
-        templateKey: smsPreview.status,
-        status: 'sent',
-        timestamp: sentAt,
-        provider: masterSmsSettings.provider,
-        response: `Queued by ${masterSmsSettings.senderName || 'VEROLA'}`
-      },
-      ...logs
-    ]);
-    setSmsPreview(null);
-    setSmsNotice(`SMS sent to ${smsPreview.customer}.`);
-    showWorkflowToast(`SMS sent to ${smsPreview.customer}`);
-  }
-
-  async function copyPreviewSms() {
-    if (!smsPreview) return;
-    await navigator.clipboard?.writeText(smsPreview.message);
-    setSmsNotice('Customer update copied. You can paste it into SMS, email, or chat for the demo.');
   }
 
   function addJob() {
@@ -2157,9 +2153,6 @@ function App() {
             toggleClock={() => toggleStaffClock(staffMembers[2].name)}
           />
         )}
-        {smsPreview && (
-          <SmsPreviewModal preview={smsPreview} provider={masterSmsSettings.provider} onSend={sendPreviewSms} onCopy={copyPreviewSms} onClose={() => setSmsPreview(null)} />
-        )}
       </main>
     </div>
     </BrandProvider>
@@ -2496,8 +2489,8 @@ function LoginView({
         </div>
         {error && <p className="login-error">{error}</p>}
         <div className="login-help">
-          <strong>Demo assigned users</strong>
-          <span>Super Admin: platform owner email</span>
+          <strong>Demo credentials -- any password works</strong>
+          <span>Super Admin: moey1722001@gmail.com</span>
           <span>Business Admin: owner@freshfold.test</span>
           <span>Staff: mia@freshfold.test</span>
         </div>
@@ -2559,12 +2552,24 @@ function InviteAcceptView({
 }) {
   const brand = useBranding();
   const status = invite ? inviteStatus(invite) : undefined;
-  const unavailableTitle = status === 'accepted' ? 'Invite already used' : status === 'expired' ? 'Invite expired' : 'Link unavailable';
-  const unavailableCopy = status === 'accepted'
-    ? 'This setup link has already been accepted. Sign in with the business admin account instead.'
-    : status === 'expired'
-      ? 'This setup link has expired. Ask the platform owner to send a new invite.'
-      : 'This invite token is invalid or could not be found.';
+  const hasMagicParams = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('userId');
+
+  const errorTitle = !invite
+    ? 'Invite not found'
+    : status === 'accepted'
+      ? 'Already accepted'
+      : status === 'expired'
+        ? 'Invite expired'
+        : 'Link unavailable';
+
+  const errorCopy = !invite
+    ? 'This invite link is invalid or could not be found. Check the link or ask the platform owner to resend.'
+    : status === 'accepted'
+      ? 'This setup link has already been used. Sign in with your business admin account.'
+      : 'This setup link has expired. Ask the platform owner to send a new invite.';
+
+  // The token or ID used to complete setup
+  const inviteKey = invite?.token || invite?.id || '';
 
   return (
     <main className="login-screen" style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
@@ -2573,44 +2578,62 @@ function InviteAcceptView({
           <BrandMark className="login-logo" />
           <div>
             <strong>{brand.name}</strong>
-            <span>Company setup invite · Powered by {brand.poweredBy}</span>
+            <span>Business setup · Powered by {brand.poweredBy}</span>
           </div>
         </div>
+
         {invite && status === 'pending' ? (
           <>
             <div>
-              <span className="eyebrow">Business Setup</span>
+              <span className="eyebrow">You've been invited</span>
               <h1>{invite.businessName}</h1>
-              <p className="login-copy">Verola has prepared a branded workspace for your business. Confirm the details, create your admin login, and your dashboard will open ready to use.</p>
+              <p className="login-copy">
+                {invite.contactName && invite.contactName !== 'Business owner'
+                  ? `Hi ${invite.contactName} — your `
+                  : 'Your '}
+                {invite.businessName} workspace on Verola is ready. Create your admin account to get started.
+              </p>
             </div>
             <div className="login-help">
-              <strong>Invite verified</strong>
-              <span>Dashboard: Business Admin</span>
+              <strong>Invite details</strong>
               <span>Organisation: {invite.businessName}</span>
               <span>Email: {invite.adminEmail}</span>
-              <span>Invite source: Verola</span>
+              <span>Role: Business Admin</span>
               <span>Expires: {new Date(invite.expiresAt).toLocaleDateString()}</span>
+              {hasMagicParams && <span>Verified via email link ✓</span>}
             </div>
             <div className="login-form">
-              <input value={invite.businessName} readOnly aria-label="Business name" />
-              <input value={setupDraft.name} onChange={(event) => setSetupDraft((current) => ({ ...current, name: event.target.value, error: '' }))} placeholder="Your name" />
-              <input value={setupDraft.password} onChange={(event) => setSetupDraft((current) => ({ ...current, password: event.target.value, error: '' }))} placeholder="Create password" type="password" />
+              <input value={invite.adminEmail} readOnly aria-label="Email address" />
+              <input
+                value={setupDraft.name}
+                onChange={(event) => setSetupDraft((current) => ({ ...current, name: event.target.value, error: '' }))}
+                placeholder="Your full name"
+                autoComplete="name"
+              />
+              <input
+                value={setupDraft.password}
+                onChange={(event) => setSetupDraft((current) => ({ ...current, password: event.target.value, error: '' }))}
+                placeholder="Create a password (min 8 characters)"
+                type="password"
+                autoComplete="new-password"
+              />
             </div>
             {setupDraft.error && <p className="login-error">{setupDraft.error}</p>}
-            <button className="primary-action" onClick={() => completeInviteSetup(invite.token)}>
+            <button className="primary-action" onClick={() => completeInviteSetup(inviteKey)}>
               <CheckCircle2 size={18} />
-              Complete setup
+              Complete setup &amp; open dashboard
             </button>
-            <a className="login-link" href="/login">Back to login</a>
+            <a className="login-link" href="/login">Already have an account? Sign in</a>
           </>
         ) : (
           <>
             <div>
-              <span className="eyebrow">Invite not found</span>
-              <h1>{unavailableTitle}</h1>
-              <p className="login-copy">{unavailableCopy}</p>
+              <span className="eyebrow">{!invite ? 'Invite not found' : status === 'accepted' ? 'Already accepted' : 'Invite expired'}</span>
+              <h1>{errorTitle}</h1>
+              <p className="login-copy">{errorCopy}</p>
             </div>
-            <a className="login-link" href="/login">Back to login</a>
+            <a className="primary-action" href="/login">Go to login</a>
+            <a className="login-link" href="/">Back to Verola</a>
           </>
         )}
       </section>
@@ -2713,8 +2736,6 @@ function BusinessAdminView(props: {
   addJob: () => void;
 }) {
   const readyJobs = props.jobs.filter((job) => job.status === 'ready_for_pickup').length;
-  const openJobs = props.jobs.filter((job) => job.status !== 'completed').length;
-  const unpaidJobs = props.jobs.filter((job) => !job.paid).length;
   const pendingRosterReplies = props.rosterShifts.filter((shift) => shift.response === 'sent').length;
   const [orderFilter, setOrderFilter] = useState<OrderFilter>('all');
   const [jobsView, setJobsView] = useState<BusinessJobsView>('active');
@@ -2732,14 +2753,14 @@ function BusinessAdminView(props: {
     <div className="business-admin-layout">
       <section className="business-command">
         <div>
-          <span className="eyebrow">Today</span>
-          <h2>Active jobs only</h2>
-          <p>Work through today’s active orders. Completed jobs move out of the way automatically.</p>
+          <span className="eyebrow">{props.business.name}</span>
+          <h2>Jobs dashboard</h2>
+          <p>Active jobs show Received, In Progress, and Ready. Completed jobs move to Today's Completed automatically.</p>
         </div>
-        <div className="command-stats">
+        <div className="command-stats stats-3">
           <div><strong>{activeJobs.length}</strong><span>Active</span></div>
           <div><strong>{readyJobs}</strong><span>Ready</span></div>
-          <div><strong>{completedJobs.length}</strong><span>Completed today</span></div>
+          <div><strong>{completedJobs.length}</strong><span>Completed</span></div>
         </div>
       </section>
 
@@ -3022,7 +3043,6 @@ function SimpleOrderList({
             </div>
             <div className="simple-order-actions" onClick={(event) => event.stopPropagation()}>
               {nextStatus && <button className="primary-simple-action" onClick={() => updateJobStatus(job.id, nextStatus)}>{simpleStageAction(nextStatus)}</button>}
-              <button onClick={() => updateJobStatus(job.id, job.status)}>Notify customer</button>
               <button onClick={() => toggleJobPaid(job.id)}>{job.paid ? 'Mark unpaid' : 'Mark paid'}</button>
             </div>
           </article>
@@ -3109,199 +3129,6 @@ function HistoryJobsList({
   );
 }
 
-function OrderOperationsToolbar({
-  jobs,
-  activeFilter,
-  setFilter,
-  sort,
-  setSort,
-  viewMode,
-  setViewMode
-}: {
-  jobs: Job[];
-  activeFilter: OrderFilter;
-  setFilter: (filter: OrderFilter) => void;
-  sort: OrderSort;
-  setSort: (sort: OrderSort) => void;
-  viewMode: OrderViewMode;
-  setViewMode: (mode: OrderViewMode) => void;
-}) {
-  const filters: Array<{ key: OrderFilter; label: string; count: number }> = [
-    { key: 'all', label: 'All orders', count: jobs.length },
-    { key: 'collected', label: 'Collected', count: jobs.filter((job) => job.status === 'collected').length },
-    { key: 'in_progress', label: 'In Progress', count: jobs.filter((job) => job.status === 'in_progress').length },
-    { key: 'ready_for_pickup', label: 'Ready', count: jobs.filter((job) => job.status === 'ready_for_pickup').length },
-    { key: 'completed', label: 'Completed', count: jobs.filter((job) => job.status === 'completed').length },
-    { key: 'overdue', label: 'Overdue', count: jobs.filter(isOrderOverdue).length },
-    { key: 'unpaid', label: 'Unpaid', count: jobs.filter((job) => !job.paid).length },
-    { key: 'sms_failed', label: 'SMS failed', count: jobs.filter((job) => latestNotification(job).state === 'failed').length }
-  ];
-
-  return (
-    <div className="order-ops-toolbar">
-      <div className="order-filter-row" role="tablist" aria-label="Order filters">
-        {filters.map((filter) => (
-          <button key={filter.key} className={activeFilter === filter.key ? 'active' : ''} onClick={() => setFilter(filter.key)}>
-            <span>{filter.label}</span>
-            <strong>{filter.count}</strong>
-          </button>
-        ))}
-      </div>
-      <label className="order-sort">
-        <span>Sort</span>
-        <select value={sort} onChange={(event) => setSort(event.target.value as OrderSort)}>
-          <option value="due">Due time</option>
-          <option value="newest">Newest update</option>
-          <option value="overdue">Overdue first</option>
-          <option value="unpaid">Unpaid first</option>
-          <option value="stage">Status</option>
-          <option value="customer">Customer name</option>
-        </select>
-      </label>
-      <div className="order-view-toggle" aria-label="Order view mode">
-        <button className={viewMode === 'list' ? 'active' : ''} onClick={() => setViewMode('list')}>List</button>
-        <button className={viewMode === 'pipeline' ? 'active' : ''} onClick={() => setViewMode('pipeline')}>Pipeline</button>
-      </div>
-    </div>
-  );
-}
-
-function OrderSummaryBar({ jobs, workflowStages }: { jobs: Job[]; workflowStages: Record<JobStatus, WorkflowStage> }) {
-  const summary = [
-    { label: workflowStages.collected.label, value: jobs.filter((job) => job.status === 'collected').length, tone: 'collected' },
-    { label: workflowStages.in_progress.label, value: jobs.filter((job) => job.status === 'in_progress').length, tone: 'progress' },
-    { label: workflowStages.ready_for_pickup.label, value: jobs.filter((job) => job.status === 'ready_for_pickup').length, tone: 'ready' },
-    { label: workflowStages.completed.label, value: jobs.filter((job) => job.status === 'completed').length, tone: 'done' },
-    { label: 'Overdue', value: jobs.filter(isOrderOverdue).length, tone: 'danger' },
-    { label: 'Unpaid', value: jobs.filter((job) => !job.paid).length, tone: 'warn' }
-  ];
-
-  return (
-    <div className="order-summary-bar">
-      {summary.map((item) => (
-        <div className={`order-summary-tile ${item.tone}`} key={item.label}>
-          <span>{item.label}</span>
-          <strong>{item.value}</strong>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function OrderBulkActions({
-  selectedCount,
-  runAction,
-  clearSelection
-}: {
-  selectedCount: number;
-  runAction: (action: 'in_progress' | 'ready_for_pickup' | 'completed' | 'paid' | 'sms') => void;
-  clearSelection: () => void;
-}) {
-  if (!selectedCount) return null;
-  return (
-    <div className="order-bulk-actions">
-      <strong>{selectedCount} selected</strong>
-      <button onClick={() => runAction('in_progress')}>Mark in progress</button>
-      <button onClick={() => runAction('ready_for_pickup')}>Mark ready</button>
-      <button onClick={() => runAction('sms')}>Send/resend SMS</button>
-      <button onClick={() => runAction('paid')}>Mark paid</button>
-      <button onClick={() => runAction('completed')}>Complete selected</button>
-      <button className="ghost" onClick={clearSelection}>Clear</button>
-    </div>
-  );
-}
-
-function OrderOperationsTable({
-  jobs,
-  selectedJobId,
-  selectedOrderIds,
-  toggleOrder,
-  toggleAll,
-  setSelectedJobId,
-  workflowStages,
-  staff,
-  updateJobStatus,
-  toggleJobPaid
-}: {
-  jobs: Job[];
-  selectedJobId?: string;
-  selectedOrderIds: string[];
-  toggleOrder: (jobId: string) => void;
-  toggleAll: () => void;
-  setSelectedJobId: (id: string) => void;
-  workflowStages: Record<JobStatus, WorkflowStage>;
-  staff: StaffMember[];
-  updateJobStatus: (jobId: string, status: JobStatus) => void;
-  toggleJobPaid: (jobId: string) => void;
-}) {
-  const allVisibleSelected = jobs.length > 0 && jobs.every((job) => selectedOrderIds.includes(job.id));
-
-  if (!jobs.length) {
-    return (
-      <div className="orders-empty-state">
-        <ClipboardList size={22} />
-        <strong>No orders match this view</strong>
-        <p>Try another filter, search term, or add a new customer job.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="orders-table-shell">
-      <div className="orders-table-head">
-        <label className="order-select-cell">
-          <input type="checkbox" checked={allVisibleSelected} onChange={toggleAll} />
-        </label>
-        <span>Order</span>
-        <span>Customer</span>
-        <span>Service / item</span>
-        <span>Due</span>
-        <span>Status</span>
-        <span>Payment</span>
-        <span>SMS</span>
-        <span>Updated</span>
-        <span>Staff</span>
-        <span>Priority</span>
-        <span>Actions</span>
-      </div>
-      <div className="orders-table-body">
-        {jobs.map((job) => {
-          const notification = latestNotification(job);
-          const nextStatus = nextJobStatus(job.status);
-          const selected = selectedOrderIds.includes(job.id);
-          return (
-            <div className={`orders-table-row ${selectedJobId === job.id ? 'active' : ''}`} key={job.id} onClick={() => setSelectedJobId(job.id)}>
-              <label className="order-select-cell" onClick={(event) => event.stopPropagation()}>
-                <input type="checkbox" checked={selected} onChange={() => toggleOrder(job.id)} />
-              </label>
-              <strong className="order-id-cell">{job.id}</strong>
-              <div className="customer-cell">
-                <strong>{job.customer}</strong>
-                <span>{job.phone}</span>
-              </div>
-              <div className="service-cell">
-                <strong>{job.item}</strong>
-                <span>{job.serviceType}</span>
-              </div>
-              <span className={isOrderOverdue(job) ? 'due-cell overdue' : 'due-cell'}>{job.due}</span>
-              <StatusBadge status={job.status} workflowStages={workflowStages} />
-              <PaymentBadge paid={job.paid} />
-              <SmsStatePill notification={notification} />
-              <span className="muted-cell">{lastUpdateLabel(job)}</span>
-              <span className="muted-cell">{assignedStaffForJob(job, staff)}</span>
-              <span className={job.priority === 'Urgent' ? 'priority urgent' : job.priority === 'Hold' ? 'priority hold' : 'priority'}>{job.priority}</span>
-              <div className="row-actions" onClick={(event) => event.stopPropagation()}>
-                {nextStatus && <button onClick={() => updateJobStatus(job.id, nextStatus)}>{workflowStages[nextStatus].verb}</button>}
-                {!job.paid && <button onClick={() => toggleJobPaid(job.id)}>Paid</button>}
-                {notification.state === 'failed' && <button onClick={() => updateJobStatus(job.id, job.status)}>Resend</button>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 function SmsStatePill({ notification }: { notification: JobNotification }) {
   const label = notification.state === 'delivered'
@@ -3464,6 +3291,7 @@ function RosterPlanner({
           <strong>{visibleMonth}</strong>
           <span>{shifts.length} shifts scheduled</span>
         </div>
+        <div className="roster-calendar-scroll">
         <div className="roster-weekdays">
           {weekdayLabels.map((day) => <span key={day}>{day}</span>)}
         </div>
@@ -3478,6 +3306,7 @@ function RosterPlanner({
               </div>
             </section>
           ))}
+        </div>
         </div>
       </div>
     </div>
@@ -3699,9 +3528,8 @@ function WorkflowBoard({
                       <span>{job.serviceType} · {job.estimate}</span>
                     </div>
                     <div className="order-snapshot-grid">
-                      <div><span>Due</span><strong>{job.due}</strong></div>
-                      <div><span>Staff</span><strong>{assigned}</strong></div>
                       <div><span>Updated</span><strong>{lastUpdateLabel(job)}</strong></div>
+                      <div><span>Staff</span><strong>{assigned}</strong></div>
                     </div>
                     <div className={`job-notification ${notification.state}`}>
                       <span>{notification.state === 'delivered' ? '✓' : notification.state === 'ready' ? '⌛' : notification.state === 'failed' ? '!' : '•'}</span>
@@ -3921,49 +3749,6 @@ function simpleOrderFilterMatches(job: Job, filter: OrderFilter) {
   return true;
 }
 
-function orderFilterMatches(job: Job, filter: OrderFilter) {
-  if (filter === 'collected') return job.status === 'collected';
-  if (filter === 'in_progress') return job.status === 'in_progress';
-  if (filter === 'ready_for_pickup') return job.status === 'ready_for_pickup';
-  if (filter === 'completed') return job.status === 'completed';
-  if (filter === 'unpaid') return !job.paid;
-  if (filter === 'overdue') return isOrderOverdue(job);
-  if (filter === 'sms_failed') return latestNotification(job).state === 'failed';
-  return true;
-}
-
-function sortOperationalJobs(jobs: Job[], sort: OrderSort) {
-  return [...jobs].sort((a, b) => {
-    if (sort === 'stage') return statusFlow.indexOf(a.status) - statusFlow.indexOf(b.status);
-    if (sort === 'customer') return a.customer.localeCompare(b.customer);
-    if (sort === 'newest') return updateSortWeight(b) - updateSortWeight(a);
-    if (sort === 'overdue') return Number(isOrderOverdue(b)) - Number(isOrderOverdue(a)) || dueSortWeight(a.due) - dueSortWeight(b.due);
-    if (sort === 'unpaid') return Number(!b.paid) - Number(!a.paid) || dueSortWeight(a.due) - dueSortWeight(b.due);
-    return dueSortWeight(a.due) - dueSortWeight(b.due);
-  });
-}
-
-function updateSortWeight(job: Job) {
-  const label = lastUpdateLabel(job).toLowerCase();
-  if (label.includes('just now')) return 999;
-  if (label.includes('am') || label.includes('pm')) return 500;
-  if (label.includes('today')) return 400;
-  if (label.includes('yesterday')) return 300;
-  return 100;
-}
-
-function dueSortWeight(due: string) {
-  const lower = due.toLowerCase();
-  if (lower.includes('yesterday') || lower.includes('overdue')) return 0;
-  if (lower.includes('today')) return 1;
-  if (lower.includes('tomorrow')) return 2;
-  return 3;
-}
-
-function isOrderOverdue(job: Job) {
-  const due = job.due.toLowerCase();
-  return job.status !== 'completed' && (due.includes('yesterday') || due.includes('overdue'));
-}
 
 function nextJobStatus(status: JobStatus) {
   const index = statusFlow.indexOf(status);
@@ -3992,7 +3777,6 @@ function operationalSignal(job: Job, notification: JobNotification) {
   if (notification.state === 'delivered') return { label: 'Customer notified', tone: 'good' };
   if (notification.state === 'ready') return { label: 'SMS ready to send', tone: 'ready' };
   if (notification.state === 'failed') return { label: 'Message not sent', tone: 'warn' };
-  if (isOrderOverdue(job)) return { label: 'Overdue', tone: 'warn' };
   return { label: job.status === 'in_progress' ? 'Work underway' : 'Waiting to start', tone: 'neutral' };
 }
 
@@ -4045,38 +3829,6 @@ function latestNotification(job: Job): JobNotification {
   };
 }
 
-function SmsPreviewModal({
-  preview,
-  provider,
-  onSend,
-  onCopy,
-  onClose
-}: {
-  preview: SmsPreview;
-  provider: SmsProvider | null;
-  onSend: () => void;
-  onCopy: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className="modal-backdrop">
-      <div className="sms-modal">
-        <span className="eyebrow">SMS preview</span>
-        <h2>Send customer update?</h2>
-        <p>Review the message before it goes to the customer. The order card will show the sent time once confirmed.</p>
-        <div className="sms-preview-box">
-          <strong>{preview.customer} · {preview.phone}</strong>
-          <p>{preview.message}</p>
-        </div>
-        <div className="modal-actions">
-          <button onClick={onClose}>Continue without SMS</button>
-          <button onClick={onCopy}>Copy message</button>
-          <button onClick={onSend}>Send SMS</button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function SmsTemplateEditor({
   templates,
@@ -4160,7 +3912,7 @@ function JobDetail({
 
       <div className="order-summary-card">
         <div>
-          <span>{job.id} · Due {job.due}</span>
+          <span>{job.id}</span>
           <h2>{job.customer}</h2>
           <p>{job.phone}</p>
           <strong>{job.item}</strong>
@@ -4195,8 +3947,8 @@ function JobDetail({
       {updateJobStatus ? (
         <>
         <div className="detail-section-title">
-          <strong>Quick actions</strong>
-          <span>Status changes notify the customer</span>
+          <strong>Update status</strong>
+          <span>Automatically notifies customer via SMS</span>
         </div>
         <div className="status-buttons">
           {statusFlow.map((status) => (
@@ -4208,10 +3960,6 @@ function JobDetail({
               <span>{simpleStageAction(status)}</span>
             </button>
           ))}
-          <button className="status-action sms-action" onClick={() => updateJobStatus(job.id, job.status)}>
-            <MessageSquareText size={18} />
-            <span>Send SMS</span>
-          </button>
         </div>
         </>
       ) : (
@@ -4305,27 +4053,42 @@ function Setting({ label, value }: { label: string; value: string }) {
 function BrandMark({ className = '' }: { className?: string }) {
   const brand = useBranding();
   const initials = brand.name.split(' ').map((word) => word[0]).join('').slice(0, 2) || 'V';
-  const logoUrl = brand.logoUrl || brand.appIconUrl;
+  const logoUrl = brand.logoUrl || brand.lightLogoUrl;
   const iconUrl = brand.appIconUrl || brand.logoUrl;
+
+  if (logoUrl) {
+    return (
+      <div className={`business-logo image-logo ${className}`} style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
+        <span>{initials}</span>
+        <img className="logo-wordmark" src={logoUrl} alt={`${brand.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />
+        {iconUrl && <img className="logo-icon" src={iconUrl} alt="" aria-hidden="true" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+      </div>
+    );
+  }
+
   return (
-    <div className={`business-logo image-logo ${className}`} style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
+    <div className={`business-logo ${className}`} style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
       <span>{initials}</span>
-      {logoUrl && <img className="logo-wordmark" src={logoUrl} alt={`${brand.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
-      {iconUrl && <img className="logo-icon" src={iconUrl} alt="" aria-hidden="true" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
     </div>
   );
 }
 
 function BusinessLogo({ business, className = '' }: { business: Business; className?: string }) {
   const initials = business.name.split(' ').map((word) => word[0]).join('').slice(0, 2) || 'V';
-  const logoUrl = business.logoUrl || platformBrand.logoUrl || platformBrand.appIconUrl;
-  const iconUrl = business.logoUrl || platformBrand.appIconUrl || logoUrl;
+  const logoUrl = business.logoUrl;
+
+  if (logoUrl) {
+    return (
+      <div className={`business-logo image-logo ${className}`} style={{ '--brand': business.primary, '--accent': business.accent } as React.CSSProperties}>
+        <span>{initials}</span>
+        <img className="logo-wordmark" src={logoUrl} alt={`${business.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />
+      </div>
+    );
+  }
 
   return (
-    <div className={`business-logo image-logo ${className}`} style={{ '--brand': business.primary, '--accent': business.accent } as React.CSSProperties}>
+    <div className={`business-logo ${className}`} style={{ '--brand': business.primary, '--accent': business.accent } as React.CSSProperties}>
       <span>{initials}</span>
-      {logoUrl && <img className="logo-wordmark" src={logoUrl} alt={`${business.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
-      {iconUrl && <img className="logo-icon" src={iconUrl} alt="" aria-hidden="true" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
     </div>
   );
 }
