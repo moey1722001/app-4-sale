@@ -1,9 +1,13 @@
 import { Account, Client, Databases, Functions, Storage, Teams } from 'appwrite';
 
-const endpoint = import.meta.env.VITE_APPWRITE_ENDPOINT as string | undefined;
-const projectId = import.meta.env.VITE_APPWRITE_PROJECT_ID as string | undefined;
+const APPWRITE_ENDPOINT = 'https://syd.cloud.appwrite.io/v1';
+const APPWRITE_PROJECT_ID = '6a0ae5450036ec146492';
 
-export const appwriteDatabaseId = import.meta.env.VITE_APPWRITE_DATABASE_ID as string | undefined;
+// Allow env var overrides for local/staging environments
+const endpoint = (import.meta.env.VITE_APPWRITE_ENDPOINT as string | undefined) || APPWRITE_ENDPOINT;
+const projectId = (import.meta.env.VITE_APPWRITE_PROJECT_ID as string | undefined) || APPWRITE_PROJECT_ID;
+
+export const appwriteDatabaseId = (import.meta.env.VITE_APPWRITE_DATABASE_ID as string | undefined) || 'verola';
 export const appwriteOrganisationCollectionId = (import.meta.env.VITE_APPWRITE_ORGANISATION_COLLECTION_ID as string | undefined) || 'organisations';
 const configuredInviteFunctionId = import.meta.env.VITE_APPWRITE_INVITE_FUNCTION_ID as string | undefined;
 export const appwriteInviteFunctionId = configuredInviteFunctionId === '6a0f5ee79aa7bce5c892'
@@ -12,13 +16,11 @@ export const appwriteInviteFunctionId = configuredInviteFunctionId === '6a0f5ee7
 export const appwriteLogoBucketId = import.meta.env.VITE_APPWRITE_LOGO_BUCKET_ID as string | undefined;
 export const appBaseUrl = (import.meta.env.VITE_APP_URL as string | undefined)?.replace(/\/$/, '');
 
-export const hasAppwriteConfig = Boolean(endpoint && projectId && appwriteDatabaseId);
+export const hasAppwriteConfig = true;
 
-export const appwriteClient = new Client();
-
-if (endpoint && projectId) {
-  appwriteClient.setEndpoint(endpoint).setProject(projectId);
-}
+export const appwriteClient = new Client()
+  .setEndpoint(endpoint)
+  .setProject(projectId);
 
 export const account = new Account(appwriteClient);
 export const databases = new Databases(appwriteClient);

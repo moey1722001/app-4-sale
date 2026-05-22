@@ -1,4 +1,4 @@
-import { Client, Databases, ID, Query, Users } from 'node-appwrite';
+import { Account, Client, Databases, ID, Query, Users } from 'node-appwrite';
 import crypto from 'node:crypto';
 
 const databaseId = process.env.APPWRITE_DATABASE_ID || 'verola';
@@ -28,7 +28,7 @@ function createAppwriteServices(req) {
     .setProject(process.env.APPWRITE_FUNCTION_PROJECT_ID)
     .setKey(apiKey);
 
-  return { configured: true, databases: new Databases(client), users: new Users(client) };
+  return { configured: true, databases: new Databases(client), users: new Users(client), account: new Account(client) };
 }
 
 async function findOrCreateUser(users, email, name) {
@@ -179,7 +179,7 @@ export default async ({ req, res, log, error }) => {
             ? `${baseUrl}/accept-invite/${encodeURIComponent(inviteId)}`
             : `${baseUrl}/accept-invite`;
 
-          await services.users.createMagicURLToken(appwriteUserId, payload.adminEmail, callbackUrl);
+          await services.account.createMagicURLToken(appwriteUserId, payload.adminEmail, callbackUrl);
           emailSent = true;
           emailConfigured = true;
           log(`Magic URL invite sent to ${payload.adminEmail} for ${payload.businessName}`);
