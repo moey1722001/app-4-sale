@@ -1464,7 +1464,8 @@ function App() {
 
       if (hasAppwriteConfig && magicUserId && magicSecret) {
         try {
-          await account.updateMagicURLSession(magicUserId, magicSecret);
+          // createSession works for magic-url tokens (and all token types) per Appwrite SDK docs
+          await account.createSession(magicUserId, magicSecret);
           await account.updateName(adminName);
           await account.updatePassword(password);
           debugInvite('appwrite magic URL session created', { userId: magicUserId });

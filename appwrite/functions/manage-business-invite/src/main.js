@@ -34,7 +34,13 @@ function createAppwriteServices(req) {
 async function findOrCreateUser(users, email, name) {
   try {
     const list = await users.list([Query.equal('email', email)]);
-    if (list.users.length > 0) return list.users[0];
+    if (list.users.length > 0) {
+      const user = list.users[0];
+      if (name && (!user.name || user.name === email.split('@')[0])) {
+        try { await users.updateName(user.$id, name); } catch { /* best-effort */ }
+      }
+      return user;
+    }
   } catch { /* search failed, attempt create */ }
   return await users.create(ID.unique(), email, undefined, undefined, name || email.split('@')[0]);
 }
@@ -171,13 +177,23 @@ export default async ({ req, res, log, error }) => {
           appwriteUserId = user.$id;
 
           // 3. Send invite via Appwrite magic URL (uses Appwrite's built-in email system)
-          // Build callback URL: APP_BASE_URL/accept-invite/INVITE_ID
-          // Appwrite will append ?userId=xxx&secret=xxx automatically
+          // Embed invite details in callback URL so the accept page can reconstruct the invite
+          // even if DB storage failed. Appwrite appends &userId=&secret= to this URL.
           const baseUrl = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
           const inviteId = payload.inviteId || '';
+          const inviteParams = new URLSearchParams({
+            businessId: payload.businessId || '',
+            business: payload.businessName || '',
+            email: payload.adminEmail || '',
+            role: payload.role || 'business_admin',
+            contact: payload.contactName || '',
+            expires: payload.expiresAt || '',
+            inviteId,
+          });
+          if (payload.phone) inviteParams.set('phone', payload.phone);
           const callbackUrl = inviteId
-            ? `${baseUrl}/accept-invite/${encodeURIComponent(inviteId)}`
-            : `${baseUrl}/accept-invite`;
+            ? `${baseUrl}/accept-invite/${encodeURIComponent(inviteId)}?${inviteParams.toString()}`
+            : `${baseUrl}/accept-invite?${inviteParams.toString()}`;
 
           await services.account.createMagicURLToken(appwriteUserId, payload.adminEmail, callbackUrl);
           emailSent = true;
