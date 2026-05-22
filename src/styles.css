@@ -706,6 +706,10 @@ h1 {
   gap: 10px;
 }
 
+.command-stats.stats-3 {
+  grid-template-columns: repeat(3, minmax(74px, 1fr));
+}
+
 .command-stats div {
   min-width: 0;
   padding: 12px;
@@ -1559,12 +1563,23 @@ h1 {
   font-size: 0.78rem;
 }
 
-.roster-weekdays,
+.roster-calendar-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.roster-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(104px, 1fr));
+  gap: 8px;
+  min-width: 728px;
+}
+
 .roster-calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(104px, 1fr));
   gap: 8px;
-  min-width: 0;
+  min-width: 728px;
 }
 
 .roster-weekdays span {
@@ -4470,7 +4485,7 @@ h1 {
 
 .order-snapshot-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
