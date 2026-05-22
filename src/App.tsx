@@ -31,6 +31,7 @@ import {
 import { ID } from 'appwrite';
 import {
   appBaseUrl,
+  appwriteClient,
   appwriteDatabaseId,
   appwriteInviteFunctionId,
   appwriteLogoBucketId,
@@ -1071,6 +1072,14 @@ function App() {
   const customerTrackJobId = currentPath.match(/^\/track\/([^/]+)/)?.[1] ? decodeURIComponent(currentPath.match(/^\/track\/([^/]+)/)?.[1] ?? '') : '';
   const customerTrackJob = customerTrackJobId ? jobs.find((job) => job.id === customerTrackJobId) : undefined;
   const customerTrackBusiness = customerTrackJob ? businesses.find((business) => business.id === customerTrackJob.businessId) : undefined;
+
+  useEffect(() => {
+    appwriteClient.ping().then(() => {
+      console.log('[Appwrite] Connection verified — backend reachable');
+    }).catch((err: unknown) => {
+      console.warn('[Appwrite] Ping failed:', err);
+    });
+  }, []);
 
   useEffect(() => {
     if (portal !== 'staff') return;
