@@ -559,9 +559,22 @@ function portalFromPath(pathname: string): Portal {
   return 'admin';
 }
 
+function isInvitePath(pathname: string) {
+  return pathname.startsWith('/invite/') || pathname.startsWith('/accept-invite') || pathname.startsWith('/setup-business/');
+}
+
 function inviteTokenFromPath(pathname: string) {
-  const match = pathname.match(/^\/(?:invite|setup-business)\/([^/]+)/);
-  return match ? decodeURIComponent(match[1]) : '';
+  // Legacy path format: /invite/TOKEN or /setup-business/TOKEN
+  const legacyMatch = pathname.match(/^\/(?:invite|setup-business)\/([^/]+)/);
+  if (legacyMatch) return decodeURIComponent(legacyMatch[1]);
+  // New magic URL format: /accept-invite/INVITE_ID (Appwrite appends ?userId=&secret=)
+  const idMatch = pathname.match(/^\/accept-invite\/([^/?]+)/);
+  if (idMatch) return decodeURIComponent(idMatch[1]);
+  // Copy-link fallback: /accept-invite?token=TOKEN
+  if (pathname === '/accept-invite' || pathname.startsWith('/accept-invite?')) {
+    return new URLSearchParams(window.location.search).get('token') ?? '';
+  }
+  return '';
 }
 
 function getInitialPath() {
@@ -831,19 +844,21 @@ function brandFromBusiness(business?: Business): OrganisationBrand {
   };
 }
 
-function inviteFromUrl(inviteId: string): OrganisationInvite | undefined {
+function inviteFromUrl(tokenOrId: string): OrganisationInvite | undefined {
   const params = new URLSearchParams(window.location.search);
-  const businessName = params.get('business');
-  const adminEmail = params.get('email');
-  if (!inviteId || !businessName || !adminEmail) return undefined;
-
+  // Query-param invite (copy-link format): /accept-invite?token=TOKEN&business=...&email=...
+  const business = params.get('business');
+  const email = params.get('email');
+  const token = params.get('token') || tokenOrId;
+  const inviteId = params.get('inviteId') || tokenOrId;
+  if (!business || !email) return undefined;
   return {
     id: inviteId,
-    token: inviteId,
-    businessId: params.get('businessId') || businessIdFromName(businessName),
-    businessName,
+    token,
+    businessId: params.get('businessId') || businessIdFromName(business),
+    businessName: business,
     contactName: params.get('contact') || 'Business owner',
-    adminEmail,
+    adminEmail: email,
     phone: params.get('phone') || '',
     role: 'business_admin',
     status: 'pending',
@@ -853,14 +868,20 @@ function inviteFromUrl(inviteId: string): OrganisationInvite | undefined {
   };
 }
 
+function getAppBaseUrl() {
+  if (typeof window === 'undefined') return 'https://verolaa.vercel.app';
+  const origin = window.location.origin;
+  const hostname = new URL(origin).hostname;
+  // On Vercel preview deployments, always use the stable production URL
+  if (hostname.startsWith('verolaa-') && hostname.endsWith('.vercel.app')) return 'https://verolaa.vercel.app';
+  const configured = appBaseUrl && !appBaseUrl.includes('your-verola-domain.com') ? appBaseUrl : '';
+  return origin || configured || 'https://verolaa.vercel.app';
+}
+
 function buildInviteUrl(invite: OrganisationInvite) {
-  const runtimeOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-  const runtimeHostname = runtimeOrigin ? new URL(runtimeOrigin).hostname : '';
-  const publicVercelOrigin = 'https://verolaa.vercel.app';
-  const isProtectedVercelDeployment = runtimeHostname.startsWith('verolaa-') && runtimeHostname.endsWith('.vercel.app');
-  const configuredBaseUrl = appBaseUrl && !appBaseUrl.includes('your-verola-domain.com') ? appBaseUrl : '';
-  const baseUrl = isProtectedVercelDeployment ? publicVercelOrigin : (runtimeOrigin || configuredBaseUrl || publicVercelOrigin);
+  const baseUrl = getAppBaseUrl();
   const params = new URLSearchParams({
+    token: invite.token,
     businessId: invite.businessId,
     business: invite.businessName,
     email: invite.adminEmail,
@@ -868,10 +889,10 @@ function buildInviteUrl(invite: OrganisationInvite) {
     role: invite.role,
     expires: invite.expiresAt,
     created: invite.createdAt,
-    source: 'verola'
+    inviteId: invite.id,
   });
   if (invite.phone) params.set('phone', invite.phone);
-  return `${baseUrl}/invite/${encodeURIComponent(invite.token)}?${params.toString()}`;
+  return `${baseUrl}/accept-invite?${params.toString()}`;
 }
 
 function buildPersonalisedInviteMessage(invite: OrganisationInvite) {
@@ -922,6 +943,7 @@ function fileToDataUrl(file: File) {
 function App() {
   const initialPath = getInitialPath();
   const isOverviewPath = initialPath === '/' || initialPath.startsWith('/overview');
+  const isInviteAcceptPath = isInvitePath(initialPath);
   const initialPortal = portalFromPath(initialPath);
   const [portal, setPortal] = useState<Portal>(() => portalFromPath(initialPath));
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => readStoredValue<AuthUser | null>(authStorageKey, null));
@@ -1038,7 +1060,13 @@ function App() {
   const canPreviewPortals = Boolean(authUser && (authUser.role === 'super' || import.meta.env.DEV || !hasAppwriteConfig));
   const visiblePortals = canPreviewPortals ? (Object.keys(portalMeta) as Portal[]) : authUser ? [authUser.role] : [];
   const activeInviteToken = inviteTokenFromPath(currentPath);
-  const activeInvite = activeInviteToken ? organisationInvites.find((invite) => invite.token === activeInviteToken) ?? inviteFromUrl(activeInviteToken) : undefined;
+  const activeInvite = activeInviteToken
+    ? (
+      organisationInvites.find((invite) => invite.token === activeInviteToken)
+      || organisationInvites.find((invite) => invite.id === activeInviteToken)
+      || inviteFromUrl(activeInviteToken)
+    )
+    : undefined;
   const inviteBusiness = activeInvite ? businesses.find((business) => business.id === activeInvite.businessId) ?? businessFromInvite(activeInvite) : undefined;
   const customerTrackJobId = currentPath.match(/^\/track\/([^/]+)/)?.[1] ? decodeURIComponent(currentPath.match(/^\/track\/([^/]+)/)?.[1] ?? '') : '';
   const customerTrackJob = customerTrackJobId ? jobs.find((job) => job.id === customerTrackJobId) : undefined;
@@ -1212,14 +1240,16 @@ function App() {
     if (!activeInviteToken || activeInvite || !hasAppwriteConfig || !appwriteInviteFunctionId) return;
 
     let cancelled = false;
-    debugInvite('invite lookup requested', { token: activeInviteToken });
+    // Determine if activeInviteToken looks like an invite ID (INV-...) or a hex token
+    const isInviteId = /^INV-/.test(activeInviteToken) || (activeInviteToken.length < 40 && !/^[0-9a-f]{40,}$/i.test(activeInviteToken));
+    const action = isInviteId ? 'lookup_invite_by_id' : 'lookup_invite';
+    const body = isInviteId ? { action, inviteId: activeInviteToken } : { action, token: activeInviteToken };
+
+    debugInvite('invite lookup requested', { token: activeInviteToken, action });
     functions.createExecution(
       appwriteInviteFunctionId,
-      JSON.stringify({ action: 'lookup_invite', token: activeInviteToken }),
-      false,
-      '/',
-      ExecutionMethod.POST,
-      { 'content-type': 'application/json' }
+      JSON.stringify(body),
+      false, '/', ExecutionMethod.POST, { 'content-type': 'application/json' }
     )
       .then((execution) => {
         if (cancelled) return;
@@ -1227,8 +1257,8 @@ function App() {
         const payload = responseBody ? JSON.parse(responseBody) as { invite?: OrganisationInvite } : {};
         if (payload.invite) {
           const invite = normalizeInvite(payload.invite);
-          setOrganisationInvites((current) => [invite, ...current.filter((item) => item.token !== invite.token)]);
-          debugInvite('invite lookup success', { token: invite.token, businessId: invite.businessId });
+          setOrganisationInvites((current) => [invite, ...current.filter((item) => item.id !== invite.id && item.token !== invite.token)]);
+          debugInvite('invite lookup success', { id: invite.id, token: invite.token, businessId: invite.businessId });
         } else {
           debugInvite('invite lookup failure', { token: activeInviteToken });
         }
@@ -1326,7 +1356,7 @@ function App() {
         const execution = await functions.createExecution(
           appwriteInviteFunctionId,
           JSON.stringify({
-            action: 'send_invite_email',
+            action: 'send_invite',
             inviteId: invite.id,
             token: invite.token,
             businessId: invite.businessId,
@@ -1347,9 +1377,12 @@ function App() {
           { 'content-type': 'application/json' }
         );
         const result = execution as { responseStatusCode?: number; responseBody?: string; status?: string };
-        const payload = result.responseBody ? JSON.parse(result.responseBody) as { emailSent?: boolean; emailConfigured?: boolean; error?: string } : {};
-        if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.emailSent === false || payload.emailConfigured === false || payload.error) {
-          throw new Error(payload.error || 'Invite email provider is not configured.');
+        const payload = result.responseBody ? JSON.parse(result.responseBody) as { emailSent?: boolean; emailConfigured?: boolean; error?: string; emailError?: string } : {};
+        if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error) {
+          throw new Error(payload.error || 'Invite email could not be sent.');
+        }
+        if (!payload.emailSent) {
+          throw new Error(payload.emailError || 'Invite email could not be sent via Appwrite.');
         }
         setOrganisationInvites((current) => current.map((item) => (item.id === invite.id ? { ...item, sentAt: 'Email sent just now' } : item)));
         setInviteNotice(`Invite email sent to ${invite.adminEmail}.`);
@@ -1391,16 +1424,17 @@ function App() {
   }
 
   async function completeInviteSetup(inviteToken: string) {
-    const invite = organisationInvites.find((item) => item.token === inviteToken) ?? inviteFromUrl(inviteToken);
+    const invite = organisationInvites.find((item) => item.token === inviteToken)
+      || organisationInvites.find((item) => item.id === inviteToken)
+      || inviteFromUrl(inviteToken);
     if (!invite) return;
+
     const status = inviteStatus(invite);
     const adminName = setupDraft.name.trim();
     const password = setupDraft.password.trim();
 
-    debugInvite(status === 'pending' ? 'invite lookup success' : 'invite lookup blocked', {
-      token: invite.token,
-      businessId: invite.businessId,
-      status
+    debugInvite(status === 'pending' ? 'invite accept started' : 'invite accept blocked', {
+      id: invite.id, token: invite.token, businessId: invite.businessId, status
     });
 
     if (status !== 'pending') {
@@ -1414,55 +1448,70 @@ function App() {
     }
 
     try {
+      // Step 1: Create Appwrite session via magic URL params if present
+      const urlParams = new URLSearchParams(window.location.search);
+      const magicUserId = urlParams.get('userId');
+      const magicSecret = urlParams.get('secret');
+
+      if (hasAppwriteConfig && magicUserId && magicSecret) {
+        try {
+          await account.updateMagicURLSession(magicUserId, magicSecret);
+          await account.updateName(adminName);
+          await account.updatePassword(password);
+          debugInvite('appwrite magic URL session created', { userId: magicUserId });
+        } catch (sessionError) {
+          debugInvite('magic URL session failed, continuing with local setup', {
+            error: sessionError instanceof Error ? sessionError.message : sessionError
+          });
+        }
+      }
+
+      // Step 2: Accept invite via function (creates/links Appwrite user, marks accepted)
       if (hasAppwriteConfig && appwriteInviteFunctionId) {
         const execution = await functions.createExecution(
           appwriteInviteFunctionId,
           JSON.stringify({
             action: 'accept_invite',
+            inviteId: invite.id,
             token: invite.token,
             adminName,
             adminEmail: invite.adminEmail,
             password,
             businessId: invite.businessId
           }),
-          false,
-          '/',
-          ExecutionMethod.POST,
-          { 'content-type': 'application/json' }
+          false, '/', ExecutionMethod.POST, { 'content-type': 'application/json' }
         );
         const result = execution as { responseStatusCode?: number; responseBody?: string };
         const payload = result.responseBody ? JSON.parse(result.responseBody) as { accepted?: boolean; error?: string } : {};
-        if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.accepted === false || payload.error) {
+        if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error) {
           throw new Error(payload.error || 'Invite setup function failed.');
         }
       }
     } catch (error) {
-      debugInvite('invite accept failed, continuing with local setup fallback', {
-        token: invite.token,
-        businessId: invite.businessId,
-        error: error instanceof Error ? error.message : error
+      debugInvite('invite accept error, continuing with local setup', {
+        id: invite.id, error: error instanceof Error ? error.message : error
       });
     }
 
+    // Local state update (always runs even if Appwrite calls fail)
     setOrganisationInvites((current) => {
-      const exists = current.some((item) => item.token === inviteToken);
-      if (exists) return current.map((item) => (item.token === inviteToken ? { ...item, status: 'accepted', acceptedAt: new Date().toISOString() } : item));
+      const exists = current.some((item) => item.id === invite.id || item.token === invite.token);
+      if (exists) return current.map((item) =>
+        (item.id === invite.id || item.token === invite.token)
+          ? { ...item, status: 'accepted', acceptedAt: new Date().toISOString() }
+          : item
+      );
       return [{ ...invite, status: 'accepted', sentAt: 'Accepted from invite link' }, ...current];
     });
     setBusinesses((current) => (current.some((business) => business.id === invite.businessId) ? current : [businessFromInvite(invite), ...current]));
-    const user: AuthUser = {
-      email: invite.adminEmail,
-      name: adminName,
-      role: 'admin',
-      businessId: invite.businessId
-    };
+    const user: AuthUser = { email: invite.adminEmail, name: adminName, role: 'admin', businessId: invite.businessId };
     setCreatedUsers((current) => [user, ...current.filter((candidate) => candidate.email !== user.email)]);
     setAuthUser(user);
     setActiveBusinessId(invite.businessId);
     setPortal('admin');
     setLoginError('');
     setSetupDraft({ name: '', password: '', error: '' });
-    debugInvite('invite accepted and account linked to organisation', { token: invite.token, businessId: invite.businessId, email: invite.adminEmail });
+    debugInvite('invite accepted and account linked', { id: invite.id, businessId: invite.businessId, email: invite.adminEmail });
     window.history.replaceState({}, '', '/business-admin');
     setCurrentPath('/business-admin');
   }
@@ -2503,12 +2552,24 @@ function InviteAcceptView({
 }) {
   const brand = useBranding();
   const status = invite ? inviteStatus(invite) : undefined;
-  const unavailableTitle = status === 'accepted' ? 'Invite already used' : status === 'expired' ? 'Invite expired' : 'Link unavailable';
-  const unavailableCopy = status === 'accepted'
-    ? 'This setup link has already been accepted. Sign in with the business admin account instead.'
-    : status === 'expired'
-      ? 'This setup link has expired. Ask the platform owner to send a new invite.'
-      : 'This invite token is invalid or could not be found.';
+  const hasMagicParams = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('userId');
+
+  const errorTitle = !invite
+    ? 'Invite not found'
+    : status === 'accepted'
+      ? 'Already accepted'
+      : status === 'expired'
+        ? 'Invite expired'
+        : 'Link unavailable';
+
+  const errorCopy = !invite
+    ? 'This invite link is invalid or could not be found. Check the link or ask the platform owner to resend.'
+    : status === 'accepted'
+      ? 'This setup link has already been used. Sign in with your business admin account.'
+      : 'This setup link has expired. Ask the platform owner to send a new invite.';
+
+  // The token or ID used to complete setup
+  const inviteKey = invite?.token || invite?.id || '';
 
   return (
     <main className="login-screen" style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
@@ -2517,44 +2578,62 @@ function InviteAcceptView({
           <BrandMark className="login-logo" />
           <div>
             <strong>{brand.name}</strong>
-            <span>Company setup invite · Powered by {brand.poweredBy}</span>
+            <span>Business setup · Powered by {brand.poweredBy}</span>
           </div>
         </div>
+
         {invite && status === 'pending' ? (
           <>
             <div>
-              <span className="eyebrow">Business Setup</span>
+              <span className="eyebrow">You've been invited</span>
               <h1>{invite.businessName}</h1>
-              <p className="login-copy">Verola has prepared a branded workspace for your business. Confirm the details, create your admin login, and your dashboard will open ready to use.</p>
+              <p className="login-copy">
+                {invite.contactName && invite.contactName !== 'Business owner'
+                  ? `Hi ${invite.contactName} — your `
+                  : 'Your '}
+                {invite.businessName} workspace on Verola is ready. Create your admin account to get started.
+              </p>
             </div>
             <div className="login-help">
-              <strong>Invite verified</strong>
-              <span>Dashboard: Business Admin</span>
+              <strong>Invite details</strong>
               <span>Organisation: {invite.businessName}</span>
               <span>Email: {invite.adminEmail}</span>
-              <span>Invite source: Verola</span>
+              <span>Role: Business Admin</span>
               <span>Expires: {new Date(invite.expiresAt).toLocaleDateString()}</span>
+              {hasMagicParams && <span>Verified via email link ✓</span>}
             </div>
             <div className="login-form">
-              <input value={invite.businessName} readOnly aria-label="Business name" />
-              <input value={setupDraft.name} onChange={(event) => setSetupDraft((current) => ({ ...current, name: event.target.value, error: '' }))} placeholder="Your name" />
-              <input value={setupDraft.password} onChange={(event) => setSetupDraft((current) => ({ ...current, password: event.target.value, error: '' }))} placeholder="Create password" type="password" />
+              <input value={invite.adminEmail} readOnly aria-label="Email address" />
+              <input
+                value={setupDraft.name}
+                onChange={(event) => setSetupDraft((current) => ({ ...current, name: event.target.value, error: '' }))}
+                placeholder="Your full name"
+                autoComplete="name"
+              />
+              <input
+                value={setupDraft.password}
+                onChange={(event) => setSetupDraft((current) => ({ ...current, password: event.target.value, error: '' }))}
+                placeholder="Create a password (min 8 characters)"
+                type="password"
+                autoComplete="new-password"
+              />
             </div>
             {setupDraft.error && <p className="login-error">{setupDraft.error}</p>}
-            <button className="primary-action" onClick={() => completeInviteSetup(invite.token)}>
+            <button className="primary-action" onClick={() => completeInviteSetup(inviteKey)}>
               <CheckCircle2 size={18} />
-              Complete setup
+              Complete setup &amp; open dashboard
             </button>
-            <a className="login-link" href="/login">Back to login</a>
+            <a className="login-link" href="/login">Already have an account? Sign in</a>
           </>
         ) : (
           <>
             <div>
-              <span className="eyebrow">Invite not found</span>
-              <h1>{unavailableTitle}</h1>
-              <p className="login-copy">{unavailableCopy}</p>
+              <span className="eyebrow">{!invite ? 'Invite not found' : status === 'accepted' ? 'Already accepted' : 'Invite expired'}</span>
+              <h1>{errorTitle}</h1>
+              <p className="login-copy">{errorCopy}</p>
             </div>
-            <a className="login-link" href="/login">Back to login</a>
+            <a className="primary-action" href="/login">Go to login</a>
+            <a className="login-link" href="/">Back to Verola</a>
           </>
         )}
       </section>

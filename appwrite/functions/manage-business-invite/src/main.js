@@ -1,7 +1,7 @@
 import { Client, Databases, ID, Query, Users } from 'node-appwrite';
 import crypto from 'node:crypto';
 
-const databaseId = process.env.APPWRITE_DATABASE_ID || 'app4sale';
+const databaseId = process.env.APPWRITE_DATABASE_ID || 'verola';
 const invitesCollectionId = process.env.APPWRITE_INVITES_COLLECTION_ID || 'organisationInvites';
 const organisationsCollectionId = process.env.APPWRITE_ORGANISATIONS_COLLECTION_ID || 'organisations';
 
@@ -12,11 +12,7 @@ function json(res, data, status = 200) {
 function parseBody(req) {
   if (req.bodyJson) return req.bodyJson;
   if (!req.bodyText && !req.body) return {};
-  try {
-    return JSON.parse(req.bodyText || req.body);
-  } catch {
-    return {};
-  }
+  try { return JSON.parse(req.bodyText || req.body); } catch { return {}; }
 }
 
 function tokenHash(token) {
@@ -25,60 +21,22 @@ function tokenHash(token) {
 
 function createAppwriteServices(req) {
   const apiKey = process.env.APPWRITE_API_KEY || process.env.APPWRITE_FUNCTION_API_KEY || req.headers['x-appwrite-key'];
-  if (!apiKey) {
-    return { configured: false, error: 'Missing APPWRITE_API_KEY for database/user operations.' };
-  }
+  if (!apiKey) return { configured: false, error: 'Missing APPWRITE_API_KEY.' };
 
   const client = new Client()
     .setEndpoint(process.env.APPWRITE_FUNCTION_API_ENDPOINT)
     .setProject(process.env.APPWRITE_FUNCTION_PROJECT_ID)
     .setKey(apiKey);
 
-  return {
-    configured: true,
-    databases: new Databases(client),
-    users: new Users(client)
-  };
+  return { configured: true, databases: new Databases(client), users: new Users(client) };
 }
 
-function inviteUrlFromPayload(payload) {
-  if (payload.inviteUrl) return payload.inviteUrl;
-  const baseUrl = (process.env.APP_BASE_URL || process.env.VITE_APP_URL || '').replace(/\/$/, '');
-  return `${baseUrl}/invite/${encodeURIComponent(payload.token)}`;
-}
-
-function personalisedInvite(payload) {
-  const inviteUrl = inviteUrlFromPayload(payload);
-  const greeting = payload.contactName && payload.contactName !== 'Business owner' ? `Hi ${payload.contactName},` : 'Hi,';
-  const body = [
-    greeting,
-    '',
-    `Verola has created a branded business portal for ${payload.businessName}.`,
-    '',
-    'Use this secure setup link to create your Business Admin account:',
-    inviteUrl,
-    '',
-    'Once setup is complete, you can add customer jobs, track progress, manage staff workflow, and prepare customer updates from your own branded dashboard.',
-    '',
-    `This invite is for ${payload.adminEmail}.`,
-    '',
-    'Powered by Verola'
-  ].join('\n');
-
-  return {
-    subject: payload.subject || `Set up ${payload.businessName} on Verola`,
-    text: payload.messageBody || body,
-    html: `
-      <div style="font-family:Inter,Arial,sans-serif;line-height:1.55;color:#111827">
-        <h1 style="margin:0 0 12px">Set up ${payload.businessName} on Verola</h1>
-        <p>${greeting}</p>
-        <p>Verola has created a branded business portal for <strong>${payload.businessName}</strong>.</p>
-        <p><a href="${inviteUrl}" style="display:inline-block;background:#4f46e5;color:white;text-decoration:none;padding:12px 16px;border-radius:10px;font-weight:700">Create your account</a></p>
-        <p>After setup, you can add customer jobs, track progress, manage staff workflow, and prepare customer updates from your own branded dashboard.</p>
-        <p style="color:#667085;font-size:13px">This invite is for ${payload.adminEmail}. Powered by Verola.</p>
-      </div>
-    `
-  };
+async function findOrCreateUser(users, email, name) {
+  try {
+    const list = await users.list([Query.equal('email', email)]);
+    if (list.users.length > 0) return list.users[0];
+  } catch { /* search failed, attempt create */ }
+  return await users.create(ID.unique(), email, undefined, undefined, name || email.split('@')[0]);
 }
 
 async function upsertInvite(databases, payload) {
@@ -94,9 +52,8 @@ async function upsertInvite(databases, payload) {
     role: payload.role || 'business_admin',
     status: 'pending',
     createdAt: payload.createdAt || now,
-    expiresAt: payload.expiresAt
+    expiresAt: payload.expiresAt,
   };
-
   try {
     await databases.updateDocument(databaseId, invitesCollectionId, inviteId, data);
   } catch {
@@ -104,72 +61,49 @@ async function upsertInvite(databases, payload) {
   }
 }
 
-async function sendEmail(payload, log) {
-  const { subject, text, html } = personalisedInvite(payload);
-
-  if (!process.env.RESEND_API_KEY || !process.env.INVITE_EMAIL_FROM) {
-    return {
-      emailSent: false,
-      emailConfigured: false,
-      subject,
-      text,
-      error: 'Email provider is not configured. Add RESEND_API_KEY and INVITE_EMAIL_FROM to this Appwrite Function.'
-    };
-  }
-
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      from: process.env.INVITE_EMAIL_FROM,
-      to: payload.adminEmail,
-      subject,
-      text,
-      html
-    })
-  });
-
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    log(`Resend failed with ${response.status}`);
-    return { emailSent: false, emailConfigured: true, subject, text, error: result.message || 'Email provider rejected the invite.' };
-  }
-
-  return { emailSent: true, emailConfigured: true, providerMessageId: result.id };
+async function lookupInviteByToken(databases, token) {
+  const hash = tokenHash(token);
+  const result = await databases.listDocuments(databaseId, invitesCollectionId, [Query.equal('tokenHash', hash)]);
+  const doc = result.documents[0];
+  if (!doc) return null;
+  return normalizeInviteDoc(doc, token);
 }
 
-async function lookupInvite(databases, token) {
-  const hash = tokenHash(token);
-  const result = await databases.listDocuments(databaseId, invitesCollectionId, [
-    Query.equal('tokenHash', hash)
-  ]);
-  const invite = result.documents[0];
-  if (!invite) return null;
+async function lookupInviteById(databases, inviteId) {
+  try {
+    const doc = await databases.getDocument(databaseId, invitesCollectionId, inviteId);
+    return normalizeInviteDoc(doc, null);
+  } catch { return null; }
+}
+
+function normalizeInviteDoc(doc, rawToken) {
   return {
-    id: invite.$id,
-    token,
-    businessId: invite.organisationId,
-    businessName: invite.businessName,
-    contactName: invite.contactName,
-    adminEmail: invite.adminEmail,
-    phone: invite.phone,
-    role: invite.role,
-    status: invite.status,
-    sentAt: 'Email sent',
-    createdAt: invite.createdAt,
-    expiresAt: invite.expiresAt,
-    acceptedAt: invite.acceptedAt
+    id: doc.$id,
+    token: rawToken || null,
+    businessId: doc.organisationId,
+    businessName: doc.businessName,
+    contactName: doc.contactName,
+    adminEmail: doc.adminEmail,
+    phone: doc.phone,
+    role: doc.role,
+    status: doc.status,
+    sentAt: doc.sentAt || null,
+    createdAt: doc.createdAt,
+    expiresAt: doc.expiresAt,
+    acceptedAt: doc.acceptedAt || null,
   };
 }
 
 async function acceptInvite(databases, users, payload) {
-  const invite = await lookupInvite(databases, payload.token);
+  let invite;
+  if (payload.inviteId) {
+    invite = await lookupInviteById(databases, payload.inviteId);
+  } else {
+    invite = await lookupInviteByToken(databases, payload.token);
+  }
   if (!invite) throw new Error('Invite not found.');
   if (invite.status === 'accepted') throw new Error('Invite already accepted.');
-  if (new Date(invite.expiresAt).getTime() < Date.now()) throw new Error('Invite expired.');
+  if (new Date(invite.expiresAt).getTime() < Date.now()) throw new Error('Invite has expired.');
 
   let user;
   try {
@@ -177,62 +111,104 @@ async function acceptInvite(databases, users, payload) {
   } catch {
     const existing = await users.list([Query.equal('email', invite.adminEmail)]);
     user = existing.users[0];
+    if (payload.password) {
+      try { await users.updatePassword(user.$id, payload.password); } catch { /* ignore if set via magic URL */ }
+    }
     if (!user) throw new Error('Could not create or find invited user.');
   }
 
   await databases.updateDocument(databaseId, invitesCollectionId, invite.id, {
     status: 'accepted',
     acceptedAt: new Date().toISOString(),
-    acceptedByUserId: user.$id
+    acceptedByUserId: user.$id,
   });
 
   try {
     await databases.updateDocument(databaseId, organisationsCollectionId, invite.businessId, {
       adminEmail: invite.adminEmail,
-      contactName: payload.adminName || invite.contactName
+      contactName: payload.adminName || invite.contactName,
     });
-  } catch {
-    // Organisation updates can be handled by the provisioning flow; invite acceptance should still succeed.
-  }
+  } catch { /* organisation update is best-effort */ }
 
-  return { accepted: true, userId: user.$id, businessId: invite.businessId };
+  return { accepted: true, userId: user.$id, businessId: invite.businessId, businessName: invite.businessName, role: invite.role };
 }
 
 export default async ({ req, res, log, error }) => {
   try {
     const payload = parseBody(req);
     const action = payload.action;
-
     const services = createAppwriteServices(req);
 
-    if (action === 'send_invite_email') {
+    // --- send_invite: store invite + send email via Appwrite magic URL ---
+    if (action === 'send_invite' || action === 'send_invite_email') {
       if (!payload.token || !payload.businessId || !payload.businessName || !payload.adminEmail) {
-        return json(res, { emailSent: false, error: 'Missing invite details.' }, 400);
+        return json(res, { emailSent: false, error: 'Missing invite fields.' }, 400);
       }
+
       let inviteStored = false;
       let inviteStoreError = '';
-      if (services.configured) {
+      let emailSent = false;
+      let emailConfigured = false;
+      let emailError = '';
+      let appwriteUserId = null;
+
+      if (!services.configured) {
+        inviteStoreError = services.error;
+        log(inviteStoreError);
+      } else {
+        // 1. Store invite
         try {
           await upsertInvite(services.databases, payload);
           inviteStored = true;
-        } catch (exception) {
-          inviteStoreError = exception?.message || 'Could not store invite.';
+        } catch (ex) {
+          inviteStoreError = ex?.message || 'Could not store invite.';
           log(`Invite storage failed: ${inviteStoreError}`);
         }
-      } else {
-        inviteStoreError = services.error;
-        log(inviteStoreError);
+
+        // 2. Find or create Appwrite user for this email
+        try {
+          const user = await findOrCreateUser(services.users, payload.adminEmail, payload.contactName);
+          appwriteUserId = user.$id;
+
+          // 3. Send invite via Appwrite magic URL (uses Appwrite's built-in email system)
+          // Build callback URL: APP_BASE_URL/accept-invite/INVITE_ID
+          // Appwrite will append ?userId=xxx&secret=xxx automatically
+          const baseUrl = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
+          const inviteId = payload.inviteId || '';
+          const callbackUrl = inviteId
+            ? `${baseUrl}/accept-invite/${encodeURIComponent(inviteId)}`
+            : `${baseUrl}/accept-invite`;
+
+          await services.users.createMagicURLToken(appwriteUserId, payload.adminEmail, callbackUrl);
+          emailSent = true;
+          emailConfigured = true;
+          log(`Magic URL invite sent to ${payload.adminEmail} for ${payload.businessName}`);
+        } catch (ex) {
+          emailError = ex?.message || 'Could not send invite email via Appwrite.';
+          log(`Magic URL email failed: ${emailError}`);
+          emailConfigured = true; // Appwrite IS configured, email just failed
+        }
       }
-      const emailResult = await sendEmail(payload, log);
-      return json(res, { ...emailResult, inviteStored, inviteStoreError }, emailResult.emailSent ? 200 : 202);
+
+      return json(res, { emailSent, emailConfigured, inviteStored, inviteStoreError, appwriteUserId, emailError }, emailSent ? 200 : 202);
     }
 
+    // --- lookup_invite: by token hash ---
     if (action === 'lookup_invite') {
       if (!services.configured) return json(res, { invite: null, error: services.error }, 503);
-      const invite = await lookupInvite(services.databases, payload.token);
+      const invite = await lookupInviteByToken(services.databases, payload.token);
       return json(res, { invite }, invite ? 200 : 404);
     }
 
+    // --- lookup_invite_by_id: by document ID (used after clicking magic URL email) ---
+    if (action === 'lookup_invite_by_id') {
+      if (!services.configured) return json(res, { invite: null, error: services.error }, 503);
+      if (!payload.inviteId) return json(res, { invite: null, error: 'Missing inviteId.' }, 400);
+      const invite = await lookupInviteById(services.databases, payload.inviteId);
+      return json(res, { invite }, invite ? 200 : 404);
+    }
+
+    // --- accept_invite: validate + create account + assign tenant ---
     if (action === 'accept_invite') {
       if (!services.configured) return json(res, { accepted: false, error: services.error }, 503);
       const result = await acceptInvite(services.databases, services.users, payload);
@@ -240,8 +216,8 @@ export default async ({ req, res, log, error }) => {
     }
 
     return json(res, { error: 'Unknown action.' }, 400);
-  } catch (exception) {
-    error(exception?.message || String(exception));
-    return json(res, { error: exception?.message || 'Invite function failed.' }, 500);
+  } catch (ex) {
+    error(ex?.message || String(ex));
+    return json(res, { error: ex?.message || 'Invite function failed.' }, 500);
   }
 };
