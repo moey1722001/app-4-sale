@@ -95,17 +95,17 @@ Recommended setup flow:
 
 ## Messaging Security
 
-Verola uses a Bring Your Own SMS Provider model only.
+Verola uses one master platform SMS provider configured by Super Admin.
 
-- Each organisation must connect ClickSend or Telnyx before SMS can be sent.
-- The platform does not store or use a shared SMS provider account.
+- Super Admin connects ClickSend or Telnyx once for the platform.
+- Business Admins cannot view, edit, test, or disconnect SMS API keys.
 - Provider credentials are posted only to secure Appwrite Functions.
-- Functions encrypt credentials before writing `smsProviderCredentials`.
+- Functions encrypt credentials before writing `platformSmsSettings`, or read them from server-only environment variables.
 - Full API keys are never returned to the frontend; return only `maskedKeyPreview`.
 - Do not store provider secrets in localStorage.
 - Do not use browser-accessible `VITE_` environment variables for provider secrets.
 - Do not log raw API keys, passwords, or decrypted credential payloads.
-- Only organisation users with `business_admin` can connect, update, test, or disconnect provider settings.
+- Every SMS send writes an audit log with the organisation/business ID for usage, billing, and troubleshooting.
 
 ## Database Collections
 
@@ -300,36 +300,35 @@ Permissions:
 - read: organisation team roles `business_admin`, `staff`
 - create/update/delete: `business_admin`
 
-### smsProviderCredentials
+### platformSmsSettings
 
-Encrypted Bring Your Own SMS Provider settings. Raw provider credentials must never be stored in browser state, localStorage, or client-readable documents.
+Encrypted master SMS provider settings. Raw provider credentials must never be stored in browser state, localStorage, or client-readable documents.
 
 Attributes:
 
-- `organisationId` string required
 - `provider` enum `clicksend`, `telnyx` required
 - `encryptedCredentials` string required
 - `maskedKeyPreview` string
 - `connectionStatus` enum `not_configured`, `connected`, `failed`
+- `senderName` string
 - `lastTestedAt` datetime
 - `createdAt` datetime
 - `updatedAt` datetime
 
 Indexes:
 
-- key index on `organisationId`
 - key index on `provider`
 - key index on `connectionStatus`
 
 Permissions:
 
-- read masked status only through an Appwrite Function for organisation role `business_admin`
-- create/update/delete: Appwrite Function only
+- read masked status only through an Appwrite Function
+- create/update/delete: Super Admin Appwrite Function only
 - no direct client read permission for `encryptedCredentials`
 
 ### smsLogs
 
-Audit log for BYO SMS delivery attempts.
+Audit log for platform SMS delivery attempts.
 
 Attributes:
 
@@ -343,6 +342,8 @@ Attributes:
 - `status` enum `pending`, `sent`, `delivered`, `failed`
 - `providerMessageId` string
 - `errorMessage` string
+- `sentByUserId` string
+- `createdAt` datetime
 - `sentByUserId` string
 - `createdAt` datetime
 
@@ -423,11 +424,11 @@ Recommended functions:
 
 - `provision-organisation`: creates an organisation document, Appwrite team, default SMS templates, default workflow stages, and first admin membership.
 - `manage-business-invite`: super-admin creates invites, sends invite email when configured, verifies `/invite/:token`, creates or links the business admin account, assigns the organisation team role, and marks the invite accepted.
-- `connect-sms-provider`: organisation-admin only function that validates ClickSend or Telnyx credentials, encrypts them server-side, stores only masked previews for display, and updates `organisations.messagingEnabled`.
-- `test-sms-provider`: organisation-admin only function that tests the saved provider without exposing secrets.
-- `disconnect-sms-provider`: organisation-admin only function that deletes stored provider credentials and marks messaging as `not_configured`.
-- `update-job-status`: validates tenant membership, updates the job, appends a status event, and only sends or queues SMS when the organisation has a connected provider.
-- `send-sms`: loads encrypted BYO provider credentials server-side, sends through ClickSend or Telnyx, and writes `smsLogs`.
+- `configure-platform-sms`: super-admin only function that validates ClickSend or Telnyx credentials, encrypts them server-side, and stores only masked previews for display.
+- `test-platform-sms`: super-admin only function that tests the saved provider without exposing secrets.
+- `disconnect-platform-sms`: super-admin only function that disables customer SMS globally.
+- `update-job-status`: validates tenant membership, updates the job, appends a status event, and only sends or queues SMS when the master platform provider is connected.
+- `send-sms`: loads encrypted master provider credentials server-side, sends through ClickSend or Telnyx, and writes `smsLogs` with the organisation ID.
 - `send-roster-shift`: business-admin only function that creates a roster shift and notifies the assigned staff member.
 - `respond-to-roster-shift`: staff-only function that records accept/decline without allowing staff to edit shift time or assignment.
 - `manage-subscription`: syncs billing state from Stripe or another payment provider.

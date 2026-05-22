@@ -2307,6 +2307,7 @@ h1 {
 .provider-options span,
 .inline-notice,
 .messaging-notice,
+.security-note,
 .sms-modal > p,
 .sms-preview-box p {
   color: var(--muted);
@@ -2418,6 +2419,42 @@ h1 {
 .messaging-actions button.danger {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.security-note {
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px dashed var(--line);
+}
+
+.sms-log-list {
+  display: grid;
+  gap: 10px;
+}
+
+.sms-log-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.065);
+  background: #ffffff;
+}
+
+.sms-log-row strong,
+.sms-log-row span,
+.sms-log-row small {
+  display: block;
+}
+
+.sms-log-row span,
+.sms-log-row small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-top: 3px;
 }
 
 .inline-notice,
@@ -2754,5 +2791,753 @@ h1 {
 
   .quick-form textarea {
     min-height: 86px;
+  }
+}
+
+/* 2026 SaaS polish layer */
+:root {
+  --page: #f7f8fb;
+  --panel: rgba(255, 255, 255, 0.92);
+  --panel-strong: #ffffff;
+  --hairline: rgba(15, 23, 42, 0.08);
+  --hairline-strong: rgba(15, 23, 42, 0.12);
+  --text-soft: #64748b;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 16px 50px rgba(15, 23, 42, 0.08);
+  --radius-lg: 22px;
+  --radius-md: 16px;
+  --radius-sm: 12px;
+  background: var(--page);
+}
+
+body {
+  background:
+    radial-gradient(circle at 18% -12%, rgba(79, 70, 229, 0.08), transparent 28%),
+    radial-gradient(circle at 88% 4%, rgba(6, 182, 212, 0.06), transparent 26%),
+    var(--page);
+  color: #0f172a;
+}
+
+.app-shell {
+  grid-template-columns: 280px minmax(0, 1fr);
+  background: transparent;
+}
+
+.sidebar {
+  color: #0f172a;
+  padding: 20px 18px;
+  gap: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  border-right: 1px solid var(--hairline);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.72), 18px 0 70px rgba(15, 23, 42, 0.035);
+  backdrop-filter: blur(18px);
+}
+
+.sidebar > .brand-lockup {
+  padding: 4px 4px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.brand-lockup strong,
+.tenant-card strong,
+.brand-command strong {
+  color: #0f172a;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.brand-lockup span,
+.tenant-card p,
+.tenant-card small,
+.brand-command p {
+  color: var(--text-soft);
+}
+
+.logo-mark,
+.business-logo {
+  border-radius: 16px;
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--brand) 18%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.36);
+}
+
+.portal-switcher {
+  gap: 5px;
+  padding: 5px;
+  border-radius: 18px;
+  background: #f2f5f9;
+  border: 1px solid rgba(15, 23, 42, 0.055);
+}
+
+.portal-switcher button {
+  min-height: 44px;
+  color: #475569;
+  border-radius: 14px;
+  padding: 11px 12px;
+  font-weight: 850;
+  transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.portal-switcher button svg {
+  color: #64748b;
+}
+
+.portal-switcher button:hover,
+.portal-switcher button.active {
+  color: #0f172a;
+  background: #ffffff;
+  transform: none;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.07);
+}
+
+.portal-switcher button.active svg {
+  color: var(--brand);
+}
+
+.tenant-card {
+  padding: 16px;
+  border-radius: 20px;
+  color: #0f172a;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.9)),
+    #ffffff;
+  border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: none;
+}
+
+.tenant-card::before {
+  inset: -64px -74px auto auto;
+  width: 160px;
+  height: 160px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--brand) 18%, transparent), transparent 70%);
+  opacity: 1;
+}
+
+.tenant-card .eyebrow {
+  color: color-mix(in srgb, var(--brand) 74%, #475569);
+}
+
+.tenant-card strong {
+  color: #0f172a;
+}
+
+.tenant-logo {
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.tenant-shield {
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, white);
+  border: 1px solid color-mix(in srgb, var(--brand) 14%, white);
+  box-shadow: none;
+}
+
+.brand-palette span {
+  width: 22px;
+  height: 22px;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.main {
+  padding: 30px;
+}
+
+.topbar {
+  color: #0f172a;
+  padding: 22px 24px;
+  margin-bottom: 24px;
+  border: 1px solid var(--hairline);
+  border-radius: 26px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92)),
+    var(--panel-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.topbar::before {
+  inset: -120px -64px auto auto;
+  width: 420px;
+  height: 240px;
+  background:
+    radial-gradient(circle at 40% 50%, color-mix(in srgb, var(--brand) 16%, transparent), transparent 68%),
+    radial-gradient(circle at 70% 35%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 58%);
+  filter: blur(2px);
+  opacity: 1;
+}
+
+.topbar .eyebrow {
+  color: color-mix(in srgb, var(--brand) 74%, #475569);
+}
+
+.topbar-copy h1 {
+  color: #0f172a;
+  font-size: clamp(1.65rem, 2.4vw, 2.28rem);
+  letter-spacing: 0;
+}
+
+.topbar-copy p {
+  color: var(--text-soft);
+  font-weight: 650;
+}
+
+.topbar-actions {
+  padding: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.84);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.topbar .config-pill {
+  min-height: 40px;
+  color: #475569;
+  background: #ffffff;
+  border: 1px solid var(--hairline);
+}
+
+.topbar .config-pill.ready {
+  color: #047857;
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+
+.topbar .icon-button,
+.topbar .logout-button {
+  color: #0f172a;
+  background: #ffffff;
+  border: 1px solid var(--hairline);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.045);
+  backdrop-filter: none;
+}
+
+.topbar .icon-button:hover,
+.topbar .logout-button:hover {
+  background: #f8fafc;
+}
+
+.logout-button,
+.icon-button,
+.secondary-action,
+.primary-action,
+.clock-action,
+.business-create-form button,
+.logo-upload,
+.invite-actions button,
+.messaging-actions button,
+.modal-actions button {
+  border-radius: 12px;
+}
+
+.primary-action,
+.clock-action,
+.business-create-form button,
+.logo-upload {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--brand) 94%, white), color-mix(in srgb, var(--brand) 86%, #111827));
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+.view-grid,
+.business-admin-layout,
+.staff-layout {
+  gap: 20px;
+}
+
+.metric,
+.panel,
+.shift-hero,
+.job-detail {
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.panel,
+.shift-hero {
+  padding: 22px;
+}
+
+.super-admin-view {
+  grid-template-columns: minmax(0, 1.18fr) minmax(340px, 0.82fr);
+  gap: 22px;
+}
+
+.super-admin-view .panel {
+  padding: 24px;
+  border-radius: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.super-business-panel,
+.workflow-panel,
+.admin-primary-panel {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.metric-grid {
+  gap: 16px;
+}
+
+.metric {
+  min-height: 128px;
+  padding: 18px;
+  align-content: space-between;
+  overflow: hidden;
+}
+
+.metric::before {
+  content: "";
+  position: absolute;
+  inset: auto 14px 0 14px;
+  height: 3px;
+  border-radius: 999px 999px 0 0;
+  background: linear-gradient(90deg, var(--brand), var(--accent));
+  opacity: 0.72;
+}
+
+.metric-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 9%, white);
+}
+
+.metric span,
+.metric small {
+  color: var(--text-soft);
+}
+
+.metric span {
+  font-weight: 800;
+}
+
+.metric strong {
+  color: #0f172a;
+  font-size: clamp(1.55rem, 2vw, 2rem);
+  letter-spacing: 0;
+}
+
+.panel-header {
+  margin-bottom: 16px;
+}
+
+.panel-header h2 {
+  color: #0f172a;
+  font-size: 1.05rem;
+  letter-spacing: 0;
+}
+
+.panel-header svg {
+  color: var(--brand);
+}
+
+.panel-action {
+  min-height: 32px;
+  padding: 7px 11px;
+  color: color-mix(in srgb, var(--brand) 74%, #0f172a);
+  background: color-mix(in srgb, var(--brand) 8%, white);
+  border: 1px solid color-mix(in srgb, var(--brand) 12%, white);
+}
+
+.business-create-form,
+.super-business-panel .business-create-form {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  background: #f8fafc;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.business-create-form input {
+  min-height: 46px;
+  border-radius: 13px;
+  border-color: rgba(15, 23, 42, 0.1);
+  background: #ffffff;
+}
+
+.business-create-form input:nth-child(1),
+.business-create-form input:nth-child(2),
+.business-create-form input:nth-child(6) {
+  grid-column: span 2;
+}
+
+.business-create-form input:nth-child(3),
+.business-create-form input:nth-child(4),
+.business-create-form input:nth-child(5) {
+  grid-column: span 1;
+}
+
+.business-create-form button,
+.super-business-panel .business-create-form button {
+  grid-column: span 6;
+  min-height: 50px;
+  justify-self: stretch;
+  border-radius: 14px;
+  font-size: 0.96rem;
+}
+
+.premium-tenant-list {
+  gap: 12px;
+}
+
+.premium-tenant-list .tenant-row {
+  padding: 16px;
+  border-radius: 20px;
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.07);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease, background 0.16s ease;
+}
+
+.premium-tenant-list .tenant-row:hover,
+.premium-tenant-list .tenant-row.selected {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--brand) 25%, white);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--brand) 5%, white), #ffffff 55%);
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.07);
+}
+
+.tenant-row-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 17px;
+}
+
+.tenant-row-main strong {
+  font-size: 0.98rem;
+  letter-spacing: 0;
+}
+
+.tenant-row-main span,
+.tenant-row-main small {
+  color: var(--text-soft);
+}
+
+.tenant-actions {
+  gap: 12px;
+}
+
+.tenant-meta {
+  gap: 7px;
+}
+
+.tenant-meta > span:first-child {
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.tenant-menu summary {
+  color: #64748b;
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+.invite-row,
+.setting-row,
+.staff-row,
+.shift-row,
+.template-item,
+.job-note,
+.activity-list div,
+.story-steps div,
+.customer-link-row {
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.065);
+  background: #ffffff;
+}
+
+.super-invite-panel .invite-row {
+  box-shadow: none;
+}
+
+.invite-actions button,
+.invite-actions .compact-action {
+  min-height: 38px;
+  border-radius: 11px;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.invite-actions button:first-of-type {
+  color: white;
+  background: var(--brand);
+}
+
+.inline-notice,
+.messaging-notice {
+  background: color-mix(in srgb, var(--brand) 7%, white);
+  border-color: color-mix(in srgb, var(--brand) 14%, white);
+}
+
+.spotlight-panel {
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--brand) 7%, transparent), transparent 34%),
+    #ffffff;
+}
+
+.branding-preview {
+  padding: 16px;
+  border-radius: 20px;
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.07);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.045);
+}
+
+.branding-header-preview {
+  color: #0f172a;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 34%),
+    linear-gradient(135deg, color-mix(in srgb, var(--brand) 8%, white), #ffffff 58%);
+  box-shadow: var(--shadow-sm);
+}
+
+.branding-header-preview .eyebrow,
+.branding-header-preview strong,
+.branding-header-preview p {
+  color: inherit;
+}
+
+.branding-header-preview p {
+  color: var(--text-soft);
+}
+
+.branding-header-preview svg {
+  color: var(--brand);
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.07);
+}
+
+.business-command {
+  color: #0f172a;
+  padding: 24px;
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 32%),
+    linear-gradient(135deg, #ffffff, #f8fafc);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-md);
+}
+
+.business-command::before {
+  content: "";
+  width: 4px;
+  align-self: stretch;
+  border-radius: 999px;
+  background: linear-gradient(var(--brand), var(--accent));
+  grid-row: 1;
+  grid-column: 1;
+  display: none;
+}
+
+.business-command .eyebrow {
+  color: color-mix(in srgb, var(--brand) 74%, #475569);
+}
+
+.business-command h2,
+.command-stats strong {
+  color: #0f172a;
+}
+
+.business-command p,
+.command-stats span {
+  color: var(--text-soft);
+}
+
+.command-stats {
+  gap: 12px;
+}
+
+.command-stats div {
+  min-width: 86px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.045);
+}
+
+.admin-drawer {
+  background: #ffffff;
+}
+
+.admin-drawer summary {
+  min-height: 62px;
+  padding: 18px 20px;
+}
+
+.admin-drawer summary span {
+  color: var(--text-soft);
+}
+
+.workflow-panel {
+  box-shadow: var(--shadow-sm);
+}
+
+.workflow-column {
+  background: #f8fafc;
+  border-color: rgba(15, 23, 42, 0.06);
+  border-radius: 18px;
+  padding: 12px;
+}
+
+.workflow-column-header > span {
+  color: var(--brand);
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+.job-card {
+  border-radius: 15px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.035);
+}
+
+.job-card.selected,
+.progress-step.done,
+.status-action.current {
+  border-color: color-mix(in srgb, var(--brand) 28%, white);
+  background: color-mix(in srgb, var(--brand) 8%, white);
+}
+
+.status-action.current {
+  color: #0f172a;
+  box-shadow: inset 0 -3px 0 var(--brand);
+}
+
+.payment-panel {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.payment-panel.paid {
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+
+.quick-form input,
+.quick-form textarea,
+.search-box input,
+.template-item textarea,
+.note-composer textarea,
+.roster-form input,
+.roster-form select,
+.credential-form input,
+.business-create-form input,
+.workflow-editor-row input {
+  border-radius: 13px;
+  border-color: rgba(15, 23, 42, 0.1);
+  background: #ffffff;
+}
+
+.search-box {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.roster-toolbar,
+.roster-calendar {
+  background: #f8fafc;
+  border-color: rgba(15, 23, 42, 0.065);
+  border-radius: 18px;
+}
+
+.roster-calendar-day,
+.roster-shift-card {
+  border-radius: 14px;
+  border-color: rgba(15, 23, 42, 0.065);
+}
+
+.shift-hero {
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--brand) 9%, transparent), transparent 30%),
+    #ffffff;
+}
+
+.notification-menu {
+  border-radius: 18px;
+  border-color: var(--hairline);
+  box-shadow: var(--shadow-md);
+}
+
+@media (max-width: 1180px) {
+  .super-admin-view {
+    grid-template-columns: 1fr;
+  }
+
+  .business-create-form,
+  .super-business-panel .business-create-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .business-create-form input:nth-child(n),
+  .business-create-form button {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 980px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    height: auto;
+    padding: 14px;
+  }
+
+  .tenant-card {
+    display: none;
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .topbar-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .main {
+    padding: 14px;
+  }
+
+  .sidebar {
+    padding: 12px;
+  }
+
+  .topbar {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .business-create-form,
+  .super-business-panel .business-create-form {
+    grid-template-columns: 1fr;
+  }
+
+  .premium-tenant-list .tenant-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 14px;
+  }
+
+  .tenant-actions {
+    padding-top: 4px;
+  }
+
+  .panel,
+  .super-admin-view .panel,
+  .shift-hero {
+    padding: 18px;
+    border-radius: 20px;
   }
 }

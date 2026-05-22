@@ -1,11 +1,11 @@
 # Verola
 
-Modern multi-tenant SaaS platform for service businesses that track customer drop-off jobs and send customer SMS updates through each business's own provider.
+Modern multi-tenant SaaS platform for service businesses that track customer drop-off jobs and send customer SMS updates through a Super Admin managed platform SMS provider.
 
 ## What is included
 
 - Super Admin portal for organisations, subscriptions, branding defaults, analytics, and tenant enable/disable controls.
-- Business Admin portal for staff, BYO messaging setup, SMS templates, customer jobs, search, and customer history.
+- Business Admin portal for staff, SMS templates, customer jobs, search, and customer history.
 - Staff portal for fast mobile-first job status updates and shift clock-in/clock-out.
 - Login gate with assigned Super Admin, Business Admin, and Staff dashboard access.
 - Company invite flow from Super Admin using the business admin email address.
@@ -13,7 +13,7 @@ Modern multi-tenant SaaS platform for service businesses that track customer dro
 - Sequenced workflow board so managers and staff can quickly see what is collected, in progress, ready for pickup, and completed.
 - Business admins can rename workflow stages, action labels, and next-step hints per business.
 - Editable SMS templates and internal job notes for handover context.
-- Bring Your Own SMS Provider only: each organisation connects ClickSend or Telnyx and pays that provider directly.
+- Master SMS provider setup: Super Admin connects ClickSend or Telnyx once and all tenant sends are logged per business.
 - Paid/unpaid tracking on every job, with staff/admin able to mark payment received at any point in the workflow.
 - Appwrite-ready backend blueprint with Auth, Teams, Databases, Functions, and Storage.
 - Demo-mode UI that runs before Appwrite credentials are configured.
@@ -66,7 +66,7 @@ Invite emails:
 - If email sending is not configured, the UI shows: "Email sending is not configured. Copy and send the invite link manually."
 - The frontend sends only invite metadata, the generated token, and the invite URL to the function. Email provider secrets and Appwrite server keys must stay inside Appwrite Function environment variables.
 
-## BYO SMS flow
+## Platform SMS flow
 
 Jobs move through:
 
@@ -75,6 +75,6 @@ Jobs move through:
 3. `ready_for_pickup`
 4. `completed`
 
-Each status change records a job event. If the organisation has connected ClickSend or Telnyx, the app shows an SMS preview before sending through that organisation's provider. If messaging is not configured, the status still updates and the user sees: "SMS not configured. Status updated, but no customer message was sent."
+Each status change records a job event. If Super Admin has connected the platform ClickSend or Telnyx provider, the app shows an SMS preview before sending through the master connection. If messaging is not configured, the status still updates and the user sees: "SMS unavailable. Status updated, but no customer message was sent."
 
-Verola is BYO provider only: each business owns the provider account and pays ClickSend or Telnyx directly.
+Business Admins never see or edit SMS API keys. SMS usage logs track the business, recipient, template, delivery status, timestamp, and provider response for audit and billing.

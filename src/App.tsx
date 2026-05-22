@@ -146,6 +146,34 @@ type SmsPreview = {
   message: string;
 };
 
+type MasterSmsSettings = {
+  provider: SmsProvider;
+  senderName: string;
+  status: SmsSetupStatus;
+  maskedKeyPreview?: string;
+  lastTestedAt?: string;
+};
+
+type MasterSmsDraft = {
+  provider: SmsProvider;
+  senderName: string;
+  apiKey: string;
+  username: string;
+  fromNumber: string;
+};
+
+type SmsLog = {
+  id: string;
+  businessId: string;
+  businessName: string;
+  recipient: string;
+  templateKey: JobStatus | 'test';
+  status: 'sent' | 'failed';
+  timestamp: string;
+  provider: SmsProvider;
+  response: string;
+};
+
 type StaffMember = {
   name: string;
   role: 'Owner' | 'Manager' | 'Staff';
@@ -483,6 +511,8 @@ const jobsStorageKey = 'verola.jobs.v2';
 const rosterStorageKey = 'verola.rosters.v2';
 const workflowStorageKey = 'verola.workflowStages.v2';
 const smsTemplateStorageKey = 'verola.smsTemplates.v2';
+const masterSmsStorageKey = 'verola.masterSmsSettings.v1';
+const smsLogsStorageKey = 'verola.smsLogs.v1';
 
 const demoUsers: AuthUser[] = [
   { email: 'moey1722001@gmail.com', name: 'Platform Owner', role: 'super' },
@@ -500,9 +530,14 @@ const demoEmailByRole: Record<UserRole, string> = {
 const demoHighlights = [
   'White-label dashboard for laundromats, mechanics, groomers, cleaners, clinics, and repair shops',
   'Simple job workflow: collected, in progress, ready for pickup, completed',
-  'Customer updates are previewed, logged, and sent only when the business connects its own SMS provider',
+  'Customer updates are previewed, logged, and sent through the platform SMS provider managed by Super Admin',
   'Staff can see today’s work, notes, payments, rosters, and shift clock status'
 ];
+const defaultMasterSmsSettings: MasterSmsSettings = {
+  provider: 'clicksend',
+  senderName: 'VEROLA',
+  status: 'not_configured'
+};
 const defaultSmsTemplates: Record<JobStatus, string> = {
   collected: 'Hi {{customer}}, {{business}} has received your order. We will update you soon.',
   in_progress: 'Hi {{customer}}, your order at {{business}} is now in progress.',
@@ -950,7 +985,15 @@ function App() {
   const [smsNotice, setSmsNotice] = useState('');
   const [smsPreview, setSmsPreview] = useState<SmsPreview | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [providerDrafts, setProviderDrafts] = useState<Record<string, { provider: SmsProvider; senderName: string; username: string; apiKey: string; fromNumber: string }>>({});
+  const [masterSmsSettings, setMasterSmsSettings] = useState<MasterSmsSettings>(() => readStoredValue(masterSmsStorageKey, defaultMasterSmsSettings));
+  const [masterSmsDraft, setMasterSmsDraft] = useState<MasterSmsDraft>(() => ({
+    provider: defaultMasterSmsSettings.provider,
+    senderName: defaultMasterSmsSettings.senderName,
+    apiKey: '',
+    username: '',
+    fromNumber: ''
+  }));
+  const [smsLogs, setSmsLogs] = useState<SmsLog[]>(() => readStoredArray(smsLogsStorageKey, []));
   const [smsTemplates, setSmsTemplates] = useState<Record<JobStatus, string>>(() => readStoredValue(smsTemplateStorageKey, defaultSmsTemplates));
 
   const lockedBusinessId = authUser?.role === 'admin' || authUser?.role === 'staff' ? authUser.businessId : undefined;
@@ -992,7 +1035,7 @@ function App() {
   const customerTrackBusiness = customerTrackJob ? businesses.find((business) => business.id === customerTrackJob.businessId) : undefined;
 
   function resetDemoData() {
-    [businessStorageKey, inviteStorageKey, userStorageKey, authStorageKey, activeBusinessStorageKey, jobsStorageKey, rosterStorageKey, workflowStorageKey, smsTemplateStorageKey].forEach((key) => localStorage.removeItem(key));
+    [businessStorageKey, inviteStorageKey, userStorageKey, authStorageKey, activeBusinessStorageKey, jobsStorageKey, rosterStorageKey, workflowStorageKey, smsTemplateStorageKey, masterSmsStorageKey, smsLogsStorageKey].forEach((key) => localStorage.removeItem(key));
     window.location.href = '/overview';
   }
 
@@ -1112,6 +1155,14 @@ function App() {
   useEffect(() => {
     writeStoredValue(smsTemplateStorageKey, smsTemplates);
   }, [smsTemplates]);
+
+  useEffect(() => {
+    writeStoredValue(masterSmsStorageKey, masterSmsSettings);
+  }, [masterSmsSettings]);
+
+  useEffect(() => {
+    writeStoredArray(smsLogsStorageKey, smsLogs);
+  }, [smsLogs]);
 
   useEffect(() => {
     if (!activeInviteToken || activeInvite || !hasAppwriteConfig || !appwriteInviteFunctionId) return;
@@ -1451,10 +1502,6 @@ function App() {
     setJobs((current) => current.filter((job) => job.businessId !== businessId));
     setRosterShifts((current) => current.filter((shift) => shift.businessId !== businessId));
     setOrganisationInvites((current) => current.filter((invite) => invite.businessId !== businessId));
-    setProviderDrafts((drafts) => {
-      const { [businessId]: _removed, ...remainingDrafts } = drafts;
-      return remainingDrafts;
-    });
     setActiveBusinessId(nextActiveBusiness.id);
     try {
       if (hasAppwriteConfig && appwriteDatabaseId) {
@@ -1548,103 +1595,66 @@ function App() {
     }
   }
 
-  function getProviderDraft(business: Business) {
-    return providerDrafts[business.id] ?? {
-      provider: business.smsProvider ?? 'clicksend',
-      senderName: business.smsSenderName || business.sender,
-      username: '',
-      apiKey: '',
-      fromNumber: ''
-    };
+  function updateMasterSmsDraft(patch: Partial<MasterSmsDraft>) {
+    setMasterSmsDraft((draft) => ({ ...draft, ...patch }));
   }
 
-  function updateProviderDraft(businessId: string, patch: Partial<{ provider: SmsProvider; senderName: string; username: string; apiKey: string; fromNumber: string }>) {
-    setProviderDrafts((drafts) => ({
-      ...drafts,
-      [businessId]: {
-        provider: drafts[businessId]?.provider ?? 'clicksend',
-        senderName: drafts[businessId]?.senderName ?? activeBusiness.smsSenderName,
-        username: drafts[businessId]?.username ?? '',
-        apiKey: drafts[businessId]?.apiKey ?? '',
-        fromNumber: drafts[businessId]?.fromNumber ?? '',
-        ...patch
-      }
-    }));
-  }
-
-  function connectSmsProvider(businessId: string) {
-    const draft = providerDrafts[businessId];
-    if (!draft?.apiKey.trim()) {
-      setBusinesses((current) => current.map((business) => business.id === businessId ? { ...business, smsSetupStatus: 'failed' } : business));
-      setSmsNotice('Connection failed. Add the required provider credentials and try again.');
+  function saveMasterSmsProvider() {
+    if (!masterSmsDraft.apiKey.trim()) {
+      setMasterSmsSettings((settings) => ({ ...settings, status: 'failed' }));
+      setSmsNotice('Master SMS setup failed. Add the provider API key before saving.');
       return;
     }
 
-    const cleanSender = draft.senderName.trim() || activeBusiness.sender;
-    const preview = draft.apiKey.length <= 4 ? '••••' : `...${draft.apiKey.slice(-4)}`;
-
-    setBusinesses((current) =>
-      current.map((business) =>
-        business.id === businessId
-          ? {
-              ...business,
-              messagingEnabled: true,
-              smsProvider: draft.provider,
-              smsSenderName: cleanSender,
-              sender: cleanSender,
-              smsSetupStatus: 'connected',
-              maskedKeyPreview: preview
-            }
-          : business
-      )
-    );
-    setProviderDrafts((drafts) => ({
-      ...drafts,
-      [businessId]: { provider: draft.provider, senderName: cleanSender, username: '', apiKey: '', fromNumber: '' }
-    }));
-    setSmsNotice(`${providerName(draft.provider)} connected. Full credentials are not shown after saving.`);
+    const cleanSender = masterSmsDraft.senderName.trim() || 'VEROLA';
+    const preview = masterSmsDraft.apiKey.length <= 4 ? '••••' : `...${masterSmsDraft.apiKey.slice(-4)}`;
+    setMasterSmsSettings({
+      provider: masterSmsDraft.provider,
+      senderName: cleanSender,
+      status: 'connected',
+      maskedKeyPreview: preview,
+      lastTestedAt: 'Just now'
+    });
+    setMasterSmsDraft((draft) => ({ ...draft, senderName: cleanSender, apiKey: '', username: '', fromNumber: '' }));
+    setSmsNotice(`${providerName(masterSmsDraft.provider)} is now the platform master SMS provider. API keys are not stored in browser state.`);
   }
 
-  function disconnectSmsProvider(businessId: string) {
-    setBusinesses((current) =>
-      current.map((business) =>
-        business.id === businessId
-          ? {
-              ...business,
-              messagingEnabled: false,
-              smsProvider: null,
-              smsSetupStatus: 'not_configured',
-              maskedKeyPreview: undefined
-            }
-          : business
-      )
-    );
-    setSmsNotice('SMS provider disconnected. Status changes will continue without customer messages.');
+  function disconnectMasterSmsProvider() {
+    setMasterSmsSettings({ ...defaultMasterSmsSettings });
+    setSmsNotice('Master SMS provider disconnected. Job statuses still update, but customer SMS is unavailable for every business.');
   }
 
-  function testSmsProvider(businessId: string) {
-    const draft = providerDrafts[businessId];
-    if (!draft?.apiKey.trim()) {
-      setBusinesses((current) => current.map((business) => business.id === businessId ? { ...business, smsSetupStatus: 'failed' } : business));
-      setSmsNotice('Test failed. Paste the required provider credentials first.');
+  function testMasterSmsProvider() {
+    if (masterSmsSettings.status === 'connected') {
+      setMasterSmsSettings((settings) => ({ ...settings, lastTestedAt: 'Just now' }));
+      setSmsNotice(`${providerName(masterSmsSettings.provider)} master SMS connection test passed.`);
       return;
     }
-
-    setBusinesses((current) =>
-      current.map((business) =>
-        business.id === businessId
-          ? {
-              ...business,
-              smsSetupStatus: business.messagingEnabled ? 'connected' : business.smsSetupStatus
-            }
-          : business
-      )
-    );
-    setSmsNotice(`${providerName(draft.provider)} connection test passed. Save the provider to enable customer SMS.`);
+    if (!masterSmsDraft.apiKey.trim()) {
+      setMasterSmsSettings((settings) => ({ ...settings, status: 'failed' }));
+      setSmsNotice('Test failed. Add provider credentials in Super Admin before testing.');
+      return;
+    }
+    setSmsNotice(`${providerName(masterSmsDraft.provider)} test passed. Save the provider to enable platform SMS.`);
   }
 
   function sendTestSms() {
-    setSmsNotice(activeBusiness.messagingEnabled ? 'Test SMS queued through the organisation provider.' : 'SMS not configured. Connect ClickSend or Telnyx before sending a test.');
+    const connected = masterSmsSettings.status === 'connected';
+    setSmsLogs((logs) => [
+      {
+        id: `sms-${Date.now()}`,
+        businessId: activeBusiness.id,
+        businessName: activeBusiness.name,
+        recipient: '+61 demo',
+        templateKey: 'test',
+        status: connected ? 'sent' : 'failed',
+        timestamp: 'Just now',
+        provider: masterSmsSettings.provider,
+        response: connected ? 'Demo test SMS queued through master provider.' : 'Master SMS provider is not configured.'
+      },
+      ...logs
+    ]);
+    setSmsNotice(connected ? 'Test SMS queued through the platform master provider.' : 'SMS unavailable. Contact the platform admin to configure the master provider.');
   }
 
   function updateJobStatus(jobId: string, status: JobStatus) {
@@ -1658,7 +1668,7 @@ function App() {
         return {
           ...job,
           status,
-          updates: [{ status, at: 'Just now', sms: activeBusiness.messagingEnabled ? `Status updated. SMS preview ready: ${message}` : 'SMS not configured. Status updated, but no customer message was sent.' }, ...job.updates]
+          updates: [{ status, at: 'Just now', sms: masterSmsSettings.status === 'connected' ? `Status updated. SMS preview ready: ${message}` : 'SMS unavailable. Status updated, but no customer message was sent.' }, ...job.updates]
         };
       })
     );
@@ -1670,12 +1680,12 @@ function App() {
       .replace('{{customer}}', job.customer.split(' ')[0])
       .replace('{{business}}', activeBusiness.name);
 
-    if (activeBusiness.messagingEnabled && activeBusiness.smsSetupStatus === 'connected') {
+    if (masterSmsSettings.status === 'connected') {
       setSmsNotice('');
       setSmsPreview({ jobId, customer: job.customer, phone: job.phone, status, message });
     } else {
       setSmsPreview(null);
-      setSmsNotice('SMS not configured. Status updated, but no customer message was sent.');
+      setSmsNotice('SMS unavailable. Status updated, but no customer message was sent. Contact the platform admin.');
     }
   }
 
@@ -1686,13 +1696,27 @@ function App() {
         job.id === smsPreview.jobId
           ? {
               ...job,
-              updates: [{ status: smsPreview.status, at: 'Just now', sms: `Customer SMS sent via ${activeBusiness.smsProvider}: ${smsPreview.message}` }, ...job.updates]
+              updates: [{ status: smsPreview.status, at: 'Just now', sms: `Customer SMS sent via ${providerName(masterSmsSettings.provider)}: ${smsPreview.message}` }, ...job.updates]
             }
           : job
       )
     );
+    setSmsLogs((logs) => [
+      {
+        id: `sms-${Date.now()}`,
+        businessId: activeBusiness.id,
+        businessName: activeBusiness.name,
+        recipient: smsPreview.phone,
+        templateKey: smsPreview.status,
+        status: 'sent',
+        timestamp: 'Just now',
+        provider: masterSmsSettings.provider,
+        response: `Queued by ${masterSmsSettings.senderName || 'VEROLA'}`
+      },
+      ...logs
+    ]);
     setSmsPreview(null);
-    setSmsNotice('Customer SMS sent using the organisation provider.');
+    setSmsNotice('Customer SMS sent using the platform master provider.');
   }
 
   async function copyPreviewSms() {
@@ -1981,6 +2005,14 @@ function App() {
             uploadBusinessLogo={uploadBusinessLogo}
             removeBusinessLogo={removeBusinessLogo}
             updateBusinessBrand={updateBusinessBrand}
+            masterSmsSettings={masterSmsSettings}
+            masterSmsDraft={masterSmsDraft}
+            updateMasterSmsDraft={updateMasterSmsDraft}
+            saveMasterSmsProvider={saveMasterSmsProvider}
+            testMasterSmsProvider={testMasterSmsProvider}
+            disconnectMasterSmsProvider={disconnectMasterSmsProvider}
+            smsLogs={smsLogs}
+            smsNotice={smsNotice}
             resetDemoData={resetDemoData}
           />
         )}
@@ -2011,11 +2043,7 @@ function App() {
             workflowStages={workflowStages}
             setWorkflowStage={(status, patch) => setWorkflowStages((stages) => ({ ...stages, [status]: { ...stages[status], ...patch } }))}
             smsNotice={smsNotice}
-            providerDraft={getProviderDraft(activeBusiness)}
-            updateProviderDraft={(patch) => updateProviderDraft(activeBusiness.id, patch)}
-            connectSmsProvider={() => connectSmsProvider(activeBusiness.id)}
-            disconnectSmsProvider={() => disconnectSmsProvider(activeBusiness.id)}
-            testSmsProvider={() => testSmsProvider(activeBusiness.id)}
+            masterSmsSettings={masterSmsSettings}
             sendTestSms={sendTestSms}
             smsTemplates={smsTemplates}
             setSmsTemplate={(status, body) => setSmsTemplates((templates) => ({ ...templates, [status]: body }))}
@@ -2046,7 +2074,7 @@ function App() {
           />
         )}
         {smsPreview && (
-          <SmsPreviewModal preview={smsPreview} provider={activeBusiness.smsProvider} onSend={sendPreviewSms} onCopy={copyPreviewSms} onClose={() => setSmsPreview(null)} />
+          <SmsPreviewModal preview={smsPreview} provider={masterSmsSettings.provider} onSend={sendPreviewSms} onCopy={copyPreviewSms} onClose={() => setSmsPreview(null)} />
         )}
       </main>
     </div>
@@ -2083,6 +2111,14 @@ function SuperAdminView({
   uploadBusinessLogo,
   removeBusinessLogo,
   updateBusinessBrand,
+  masterSmsSettings,
+  masterSmsDraft,
+  updateMasterSmsDraft,
+  saveMasterSmsProvider,
+  testMasterSmsProvider,
+  disconnectMasterSmsProvider,
+  smsLogs,
+  smsNotice,
   resetDemoData
 }: {
   businesses: Business[];
@@ -2113,18 +2149,26 @@ function SuperAdminView({
   uploadBusinessLogo: (businessId: string, file?: File) => void;
   removeBusinessLogo: (businessId: string) => void;
   updateBusinessBrand: (businessId: string, patch: Partial<Pick<Business, 'primary' | 'accent'>>) => void;
+  masterSmsSettings: MasterSmsSettings;
+  masterSmsDraft: MasterSmsDraft;
+  updateMasterSmsDraft: (patch: Partial<MasterSmsDraft>) => void;
+  saveMasterSmsProvider: () => void;
+  testMasterSmsProvider: () => void;
+  disconnectMasterSmsProvider: () => void;
+  smsLogs: SmsLog[];
+  smsNotice: string;
   resetDemoData: () => void;
 }) {
   const activeTenants = tenants.filter((tenant) => tenant.active).length;
-  const connectedMessagingTenants = tenants.filter((tenant) => tenant.messagingEnabled).length;
+  const totalSmsSent = smsLogs.filter((log) => log.status === 'sent').length;
 
   return (
     <div className="view-grid super-admin-view">
       <section className="metric-grid super-metrics">
         <Metric icon={Building2} label="Organisations" value={tenants.length.toString()} detail={`${activeTenants} enabled`} />
-        <Metric icon={MessageSquareText} label="BYO providers" value={`${connectedMessagingTenants}/${tenants.length}`} detail="Businesses connected" />
+        <Metric icon={MessageSquareText} label="Master SMS" value={masterSmsSettings.status === 'connected' ? 'Live' : 'Off'} detail={masterSmsSettings.status === 'connected' ? providerName(masterSmsSettings.provider) : 'Configure once'} />
         <Metric icon={CreditCard} label="MRR" value="$7.4k" detail="Subscriptions healthy" />
-        <Metric icon={Activity} label="Jobs today" value={tenants.reduce((sum, tenant) => sum + tenant.jobs, 0).toString()} detail="Live workflow volume" />
+        <Metric icon={Activity} label="SMS logs" value={totalSmsSent.toString()} detail="Platform sent events" />
       </section>
 
       <section className="panel wide super-business-panel">
@@ -2273,14 +2317,22 @@ function SuperAdminView({
         </div>
       </section>
 
+      <section className="panel master-sms-panel">
+        <PanelHeader icon={ShieldCheck} title="Platform SMS Settings" action={masterSmsSettings.status === 'connected' ? 'Master provider live' : 'Action needed'} />
+        <MasterSmsSettingsPanel
+          settings={masterSmsSettings}
+          draft={masterSmsDraft}
+          updateDraft={updateMasterSmsDraft}
+          saveProvider={saveMasterSmsProvider}
+          testProvider={testMasterSmsProvider}
+          disconnectProvider={disconnectMasterSmsProvider}
+          notice={smsNotice}
+        />
+      </section>
+
       <section className="panel">
-        <PanelHeader icon={ShieldCheck} title="BYO Messaging Policy" />
-        <div className="settings-stack">
-          <Setting label="Platform SMS account" value="Not used" />
-          <Setting label="Supported providers" value="ClickSend, Telnyx" />
-          <Setting label="SMS costs" value="Paid directly by each business" />
-          <Setting label="Credentials" value="Encrypted server-side only" />
-        </div>
+        <PanelHeader icon={MessageSquareText} title="SMS Usage Logs" action={`${smsLogs.length} events`} />
+        <SmsUsageLog logs={smsLogs} />
       </section>
 
       <section className="panel">
@@ -2559,11 +2611,7 @@ function BusinessAdminView(props: {
   workflowStages: Record<JobStatus, WorkflowStage>;
   setWorkflowStage: (status: JobStatus, patch: Partial<WorkflowStage>) => void;
   smsNotice: string;
-  providerDraft: { provider: SmsProvider; senderName: string; username: string; apiKey: string; fromNumber: string };
-  updateProviderDraft: (patch: Partial<{ provider: SmsProvider; senderName: string; username: string; apiKey: string; fromNumber: string }>) => void;
-  connectSmsProvider: () => void;
-  disconnectSmsProvider: () => void;
-  testSmsProvider: () => void;
+  masterSmsSettings: MasterSmsSettings;
   sendTestSms: () => void;
   smsTemplates: Record<JobStatus, string>;
   setSmsTemplate: (status: JobStatus, body: string) => void;
@@ -2631,17 +2679,8 @@ function BusinessAdminView(props: {
         </details>
 
         <details className="panel admin-drawer">
-          <summary><MessageSquareText size={18} /> Messaging <span>{props.business.smsSetupStatus === 'connected' ? 'Connected' : 'Not configured'}</span></summary>
-          <MessagingSettings
-            business={props.business}
-            draft={props.providerDraft}
-            updateDraft={props.updateProviderDraft}
-            connectProvider={props.connectSmsProvider}
-            disconnectProvider={props.disconnectSmsProvider}
-            testProvider={props.testSmsProvider}
-            sendTestSms={props.sendTestSms}
-            notice={props.smsNotice}
-          />
+          <summary><MessageSquareText size={18} /> Messaging <span>{props.masterSmsSettings.status === 'connected' ? 'Enabled' : 'Unavailable'}</span></summary>
+          <BusinessSmsStatus settings={props.masterSmsSettings} notice={props.smsNotice} sendTestSms={props.sendTestSms} />
           <SmsTemplateEditor templates={props.smsTemplates} setTemplate={props.setSmsTemplate} workflowStages={props.workflowStages} />
         </details>
 
@@ -2996,51 +3035,48 @@ function WorkflowBoard({
   );
 }
 
-function MessagingSettings({
-  business,
+function MasterSmsSettingsPanel({
+  settings,
   draft,
   updateDraft,
-  connectProvider,
-  disconnectProvider,
+  saveProvider,
   testProvider,
-  sendTestSms,
+  disconnectProvider,
   notice
 }: {
-  business: Business;
-  draft: { provider: SmsProvider; senderName: string; username: string; apiKey: string; fromNumber: string };
-  updateDraft: (patch: Partial<{ provider: SmsProvider; senderName: string; username: string; apiKey: string; fromNumber: string }>) => void;
-  connectProvider: () => void;
-  disconnectProvider: () => void;
+  settings: MasterSmsSettings;
+  draft: MasterSmsDraft;
+  updateDraft: (patch: Partial<MasterSmsDraft>) => void;
+  saveProvider: () => void;
   testProvider: () => void;
-  sendTestSms: () => void;
+  disconnectProvider: () => void;
   notice: string;
 }) {
   return (
     <div className="messaging-setup">
-      <div className={business.messagingEnabled ? 'messaging-status connected' : 'messaging-status'}>
+      <div className={settings.status === 'connected' ? 'messaging-status connected' : 'messaging-status'}>
         <div>
-          <strong>{business.messagingEnabled ? `${providerName(business.smsProvider)} connected` : 'SMS not configured'}</strong>
-          <p>{business.messagingEnabled ? `Saved key ${business.maskedKeyPreview}. SMS costs are paid directly to ${providerName(business.smsProvider)}.` : 'Status changes still work. Customer SMS is disabled until this business connects its own provider.'}</p>
+          <strong>{settings.status === 'connected' ? `${providerName(settings.provider)} master provider connected` : 'Master SMS provider not configured'}</strong>
+          <p>{settings.status === 'connected' ? `Saved key ${settings.maskedKeyPreview}. All tenant SMS routes through this Super Admin managed provider.` : 'Business admins can still update job statuses, but customer SMS will be unavailable until Super Admin connects the platform provider.'}</p>
         </div>
-        {business.messagingEnabled && <CheckCircle2 size={22} />}
+        {settings.status === 'connected' && <CheckCircle2 size={22} />}
       </div>
 
       <div className="setup-steps">
-        <Step number="1" title="Choose provider" text="Pick the SMS provider this business will pay directly." />
-        <Step number="2" title="Create provider account" text="Use ClickSend for easy Australian setup, or Telnyx for lower scale pricing." />
-        <Step number="3" title="Paste credentials" text="Credentials are sent only to secure backend routes and encrypted before storage." />
-        <Step number="4" title="Send test SMS" text="Confirm the provider can send from the business sender name or number." />
-        <Step number="5" title="Start messaging customers" text="Job status changes will show a preview before sending." />
+        <Step number="1" title="Choose platform provider" text="Super Admin controls the single SMS provider for every tenant." />
+        <Step number="2" title="Store secrets server-side" text="Production keys must live in environment variables or encrypted server-side storage, never frontend code." />
+        <Step number="3" title="Send test SMS" text="Confirm the platform sender can queue messages before enabling customer updates." />
+        <Step number="4" title="Audit per business" text="Every message log keeps the business, recipient, template, status, and provider response." />
       </div>
 
       <div className="provider-options">
         <button className={draft.provider === 'clicksend' ? 'selected' : ''} onClick={() => updateDraft({ provider: 'clicksend' })}>
           <strong>ClickSend</strong>
-          <span>Easiest setup for Australian businesses.</span>
+          <span>Easiest setup for Australian SMS delivery.</span>
         </button>
         <button className={draft.provider === 'telnyx' ? 'selected' : ''} onClick={() => updateDraft({ provider: 'telnyx' })}>
           <strong>Telnyx</strong>
-          <span>Cheapest at scale, but more technical.</span>
+          <span>Useful at scale, but more technical.</span>
         </button>
       </div>
 
@@ -3053,12 +3089,64 @@ function MessagingSettings({
 
       <div className="messaging-actions">
         <button onClick={testProvider}>Test Connection</button>
-        <button onClick={connectProvider}>Save Provider Securely</button>
-        <button onClick={sendTestSms}>Send Test SMS</button>
+        <button onClick={saveProvider}>Save Master Provider</button>
         <button className="danger" onClick={disconnectProvider}>Disconnect Provider</button>
       </div>
 
       {notice && <p className="messaging-notice">{notice}</p>}
+      <p className="security-note">Raw SMS API keys are cleared immediately in this demo UI. In production, save them only through an Appwrite Function or server route backed by encrypted environment/secret storage.</p>
+    </div>
+  );
+}
+
+function BusinessSmsStatus({ settings, notice, sendTestSms }: { settings: MasterSmsSettings; notice: string; sendTestSms: () => void }) {
+  const connected = settings.status === 'connected';
+  return (
+    <div className="messaging-setup">
+      <div className={connected ? 'messaging-status connected' : 'messaging-status'}>
+        <div>
+          <strong>{connected ? 'SMS messaging enabled' : 'SMS unavailable — contact platform admin'}</strong>
+          <p>{connected ? `Messages are sent through Verola's ${providerName(settings.provider)} master connection. Your templates and workflow buttons still control the customer message content.` : 'You can still update job statuses and copy message previews. Super Admin must configure the platform SMS provider before sending.'}</p>
+        </div>
+        {connected && <CheckCircle2 size={22} />}
+      </div>
+      <div className="settings-stack">
+        <Setting label="Provider access" value="Managed by Super Admin" />
+        <Setting label="API keys" value="Hidden from business admins" />
+        <Setting label="Audit logs" value="Tracked per business and message" />
+        <Setting label="Current status" value={connected ? `${providerName(settings.provider)} connected` : 'Not configured'} />
+      </div>
+      <div className="messaging-actions">
+        <button onClick={sendTestSms}>{connected ? 'Send Test Update' : 'Check SMS Status'}</button>
+      </div>
+      {notice && <p className="messaging-notice">{notice}</p>}
+    </div>
+  );
+}
+
+function SmsUsageLog({ logs }: { logs: SmsLog[] }) {
+  if (logs.length === 0) {
+    return (
+      <div className="empty-roster">
+        <MessageSquareText size={22} />
+        <strong>No SMS events yet</strong>
+        <p>Sent and failed customer updates will appear here by business.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="sms-log-list">
+      {logs.slice(0, 8).map((log) => (
+        <div className="sms-log-row" key={log.id}>
+          <div>
+            <strong>{log.businessName}</strong>
+            <span>{log.recipient} · {log.templateKey} · {log.timestamp}</span>
+            <small>{log.response}</small>
+          </div>
+          <span className={log.status === 'sent' ? 'status-dot active' : 'status-dot paused'}>{log.status}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -3099,7 +3187,7 @@ function SmsPreviewModal({
       <div className="sms-modal">
         <span className="eyebrow">SMS preview</span>
         <h2>Send customer update?</h2>
-        <p>{providerName(provider)} will send this SMS. Verola does not pay for or bill SMS usage.</p>
+        <p>{providerName(provider)} will send this SMS through the platform master connection. This event will be logged against the business for audit and billing.</p>
         <div className="sms-preview-box">
           <strong>{preview.customer} · {preview.phone}</strong>
           <p>{preview.message}</p>
