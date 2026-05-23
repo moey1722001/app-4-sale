@@ -1,4 +1,4 @@
-import { Account, Client, Databases, Functions, Storage, Teams } from 'appwrite';
+import { Account, Client, Databases, Functions, Query, Storage, Teams } from 'appwrite';
 
 const APPWRITE_ENDPOINT = 'https://syd.cloud.appwrite.io/v1';
 const APPWRITE_PROJECT_ID = '6a0ae5450036ec146492';
@@ -27,3 +27,4 @@ export const databases = new Databases(appwriteClient);
 export const functions = new Functions(appwriteClient);
 export const storage = new Storage(appwriteClient);
 export const teams = new Teams(appwriteClient);
+export { Query };

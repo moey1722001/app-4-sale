@@ -4336,6 +4336,14 @@ h1 {
   margin: 0;
 }
 
+.admin-live-toast {
+  margin: -6px 0 8px;
+  width: 100%;
+  justify-content: flex-start;
+  border-radius: 18px;
+  padding: 12px 14px;
+}
+
 .roster-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

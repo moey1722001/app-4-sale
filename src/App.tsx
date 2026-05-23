@@ -41,6 +41,7 @@ import {
   databases,
   functions,
   hasAppwriteConfig,
+  Query,
   storage
 } from './lib/appwrite';
 import { BrandProvider, OrganisationBrand, platformBrand, useBranding } from './lib/branding';
@@ -55,6 +56,21 @@ type SmsProvider = 'clicksend' | 'telnyx';
 type SmsSetupStatus = 'not_configured' | 'connected' | 'failed';
 type ShiftResponse = 'draft' | 'sent' | 'accepted' | 'declined';
 type InviteStatus = 'pending' | 'accepted' | 'expired';
+
+type RosterShiftDocument = {
+  $id: string;
+  organisationId: string;
+  staffUserId?: string;
+  staffName: string;
+  role?: string;
+  shiftDate: string;
+  startTime: string;
+  endTime: string;
+  area?: string;
+  responseStatus?: ShiftResponse;
+  respondedAt?: string;
+  createdBy?: string;
+};
 
 type Business = {
   id: string;
@@ -182,6 +198,7 @@ type JobNotification = {
 };
 
 type StaffMember = {
+  businessId: string;
   name: string;
   role: 'Owner' | 'Manager' | 'Staff';
   email?: string;
@@ -196,6 +213,7 @@ type StaffMember = {
 type RosterShift = {
   id: string;
   businessId: string;
+  staffUserId?: string;
   staffName: string;
   role: string;
   date: string;
@@ -309,10 +327,10 @@ const initialBusinesses: Business[] = [
 ];
 
 const staff: StaffMember[] = [
-  { name: 'Ava Chen', role: 'Owner', phone: '+61 412 200 100', active: true, clockedIn: true, clockInAt: '7:58 AM', hoursToday: 6.2, lastShift: 'Yesterday 8.1h' },
-  { name: 'Noah Singh', role: 'Manager', phone: '+61 419 510 340', active: true, clockedIn: true, clockInAt: '8:16 AM', hoursToday: 5.7, lastShift: 'Yesterday 7.8h' },
-  { name: 'Mia Taylor', role: 'Staff', phone: '+61 421 887 220', active: true, clockedIn: false, hoursToday: 0, lastShift: 'Mon 5.5h' },
-  { name: 'Leo Park', role: 'Staff', phone: '+61 438 881 901', active: false, clockedIn: false, hoursToday: 0, lastShift: 'Fri 4.0h' }
+  { businessId: 'fresh-fold', name: 'Ava Chen', role: 'Owner', email: 'owner@freshfold.test', phone: '+61 412 200 100', active: true, clockedIn: true, clockInAt: '7:58 AM', hoursToday: 6.2, lastShift: 'Yesterday 8.1h' },
+  { businessId: 'fresh-fold', name: 'Noah Singh', role: 'Manager', email: 'noah@freshfold.test', phone: '+61 419 510 340', active: true, clockedIn: true, clockInAt: '8:16 AM', hoursToday: 5.7, lastShift: 'Yesterday 7.8h' },
+  { businessId: 'fresh-fold', name: 'Mia Taylor', role: 'Staff', email: 'mia@freshfold.test', phone: '+61 421 887 220', active: true, clockedIn: false, hoursToday: 0, lastShift: 'Mon 5.5h' },
+  { businessId: 'fresh-fold', name: 'Leo Park', role: 'Staff', email: 'leo@freshfold.test', phone: '+61 438 881 901', active: false, clockedIn: false, hoursToday: 0, lastShift: 'Fri 4.0h' }
 ];
 
 const seedRosterShifts: RosterShift[] = [
@@ -780,6 +798,88 @@ async function patchBusinessDocument(businessId: string, patch: Partial<Business
   return true;
 }
 
+function rosterShiftFromDocument(document: RosterShiftDocument): RosterShift {
+  return {
+    id: document.$id,
+    businessId: document.organisationId,
+    staffUserId: document.staffUserId,
+    staffName: document.staffName,
+    role: document.role || 'Staff',
+    date: document.shiftDate,
+    start: document.startTime,
+    end: document.endTime,
+    area: document.area || 'Shift',
+    response: document.responseStatus || 'sent',
+    respondedAt: document.respondedAt,
+    sentAt: 'Synced'
+  };
+}
+
+function rosterShiftPayload(shift: RosterShift, createdBy = 'business_admin') {
+  return {
+    organisationId: shift.businessId,
+    staffUserId: shift.staffUserId || staffUserIdFor(shift.staffName),
+    staffName: shift.staffName,
+    role: shift.role,
+    shiftDate: shift.date,
+    startTime: shift.start,
+    endTime: shift.end,
+    area: shift.area,
+    responseStatus: shift.response,
+    respondedAt: shift.respondedAt,
+    createdBy
+  };
+}
+
+async function fetchPersistedRosterShifts(businessId: string) {
+  if (!hasAppwriteConfig || !appwriteDatabaseId) return [];
+  const response = await databases.listDocuments(appwriteDatabaseId, 'rosterShifts', [Query.equal('organisationId', businessId)]);
+  return response.documents.map((document) => rosterShiftFromDocument(document as unknown as RosterShiftDocument));
+}
+
+async function persistRosterShift(shift: RosterShift, createdBy?: string) {
+  if (!hasAppwriteConfig || !appwriteDatabaseId) return false;
+  const payload = rosterShiftPayload(shift, createdBy);
+  try {
+    await databases.updateDocument(appwriteDatabaseId, 'rosterShifts', shift.id, payload);
+  } catch {
+    await databases.createDocument(appwriteDatabaseId, 'rosterShifts', shift.id, payload);
+  }
+  return true;
+}
+
+async function patchRosterShift(shift: RosterShift) {
+  if (!hasAppwriteConfig || !appwriteDatabaseId) return false;
+  await databases.updateDocument(appwriteDatabaseId, 'rosterShifts', shift.id, rosterShiftPayload(shift));
+  return true;
+}
+
+async function deletePersistedRosterShift(shiftId: string) {
+  if (!hasAppwriteConfig || !appwriteDatabaseId) return false;
+  await databases.deleteDocument(appwriteDatabaseId, 'rosterShifts', shiftId);
+  return true;
+}
+
+function staffClockPayload(member: StaffMember, businessId: string, clockingOut: boolean) {
+  const now = new Date().toISOString();
+  return {
+    organisationId: businessId,
+    staffUserId: staffUserIdFor(member),
+    staffName: member.name,
+    clockInAt: clockingOut ? new Date(Date.now() - Math.max(member.hoursToday, 0.1) * 60 * 60 * 1000).toISOString() : now,
+    clockOutAt: clockingOut ? now : undefined,
+    status: clockingOut ? 'clocked_out' : 'clocked_in',
+    totalMinutes: clockingOut ? Math.max(1, Math.round(Math.max(member.hoursToday, 0.1) * 60)) : undefined
+  };
+}
+
+async function persistStaffClock(member: StaffMember, businessId: string, clockingOut: boolean) {
+  if (!hasAppwriteConfig || !appwriteDatabaseId) return false;
+  const documentId = `clock-${staffUserIdFor(member)}-${Date.now()}`.slice(0, 36);
+  await databases.createDocument(appwriteDatabaseId, 'staffShifts', documentId, staffClockPayload(member, businessId, clockingOut));
+  return true;
+}
+
 function inviteStatus(invite: OrganisationInvite): InviteStatus {
   if (invite.status === 'accepted') return 'accepted';
   return new Date(invite.expiresAt).getTime() < Date.now() ? 'expired' : 'pending';
@@ -941,6 +1041,53 @@ function inviteMailtoHref(invite: OrganisationInvite) {
   return `mailto:${encodeURIComponent(invite.adminEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
+function staffIdentityMatches(member: StaffMember, user: AuthUser) {
+  const email = user.email.toLowerCase();
+  const name = user.name.toLowerCase();
+  return member.email?.toLowerCase() === email
+    || member.phone.toLowerCase() === email
+    || member.name.toLowerCase() === name;
+}
+
+function staffMemberFromAuth(user: AuthUser, businessId: string): StaffMember {
+  return {
+    businessId,
+    name: user.name || user.email.split('@')[0] || 'Staff member',
+    role: 'Staff',
+    email: user.email,
+    phone: user.email,
+    active: true,
+    clockedIn: false,
+    hoursToday: 0,
+    lastShift: 'New staff member'
+  };
+}
+
+function staffUserIdFor(memberOrName: Pick<StaffMember, 'email' | 'phone' | 'name'> | string) {
+  const raw = typeof memberOrName === 'string'
+    ? memberOrName
+    : memberOrName.email || memberOrName.phone || memberOrName.name;
+  return raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'staff-member';
+}
+
+function rosterShiftBelongsToStaff(shift: RosterShift, member: StaffMember, user?: AuthUser | null) {
+  const possibleIds = [
+    staffUserIdFor(member),
+    member.email ? staffUserIdFor(member.email) : '',
+    member.phone ? staffUserIdFor(member.phone) : '',
+    user?.email ? staffUserIdFor(user.email) : '',
+    user?.name ? staffUserIdFor(user.name) : ''
+  ].filter(Boolean);
+  const comparableNames = [member.name, member.email, member.phone, user?.name, user?.email]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+
+  return Boolean(
+    (shift.staffUserId && possibleIds.includes(shift.staffUserId))
+    || comparableNames.includes(shift.staffName.toLowerCase())
+  );
+}
+
 async function passwordDigest(value: string) {
   const data = new TextEncoder().encode(value);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -1062,6 +1209,10 @@ function App() {
     () => rosterShifts.filter((shift) => shift.businessId === activeBusiness.id),
     [activeBusiness.id, rosterShifts]
   );
+  const activeStaffMembers = useMemo(
+    () => staffMembers.filter((member) => !member.businessId || member.businessId === activeBusiness.id),
+    [activeBusiness.id, staffMembers]
+  );
   const selectedJob = visibleJobs.find((job) => job.id === selectedJobId);
   const inferredAdminUsers = businesses
     .filter((business) => business.adminEmail)
@@ -1077,8 +1228,8 @@ function App() {
   const loginBusiness = loginUser?.businessId ? businesses.find((business) => business.id === loginUser.businessId) : loginBusinessByEmail;
   const activeBrand = brandFromBusiness(activeBusiness);
   const currentStaffMember = authUser?.role === 'staff'
-    ? staffMembers.find((member) => member.email === authUser.email || member.name.toLowerCase() === authUser.name.toLowerCase() || member.phone === authUser.email) ?? staffMembers[0]
-    : staffMembers[2] ?? staffMembers[0];
+    ? activeStaffMembers.find((member) => staffIdentityMatches(member, authUser)) ?? staffMemberFromAuth(authUser, activeBusiness.id)
+    : activeStaffMembers.find((member) => member.role === 'Staff') ?? activeStaffMembers[0] ?? staffMemberFromAuth({ email: '', name: 'Staff member', role: 'staff', businessId: activeBusiness.id }, activeBusiness.id);
   const loginBrand = loginRole === 'super' ? platformBrand : brandFromBusiness(loginBusiness);
   const canPreviewPortals = Boolean(authUser && (authUser.role === 'super' || import.meta.env.DEV || !hasAppwriteConfig));
   const visiblePortals = canPreviewPortals ? (Object.keys(portalMeta) as Portal[]) : authUser ? [authUser.role] : [];
@@ -1105,17 +1256,17 @@ function App() {
 
   useEffect(() => {
     if (portal !== 'staff') return;
-    const staffName = staffMembers[2]?.name;
+    const staffName = currentStaffMember.name;
     if (!staffName) return;
     const viewedAt = nowLabel();
     setRosterShifts((current) =>
       current.map((shift) =>
-        shift.businessId === activeBusiness.id && shift.staffName === staffName && shift.response === 'sent' && !shift.viewedAt
+        shift.businessId === activeBusiness.id && rosterShiftBelongsToStaff(shift, currentStaffMember, authUser) && shift.response === 'sent' && !shift.viewedAt
           ? { ...shift, viewedAt }
           : shift
       )
     );
-  }, [portal, activeBusiness.id, staffMembers]);
+  }, [portal, activeBusiness.id, authUser, currentStaffMember]);
 
   function resetDemoData() {
     [businessStorageKey, inviteStorageKey, userStorageKey, authStorageKey, activeBusinessStorageKey, jobsStorageKey, rosterStorageKey, staffStorageKey, workflowStorageKey, smsTemplateStorageKey, masterSmsStorageKey, smsLogsStorageKey].forEach((key) => localStorage.removeItem(key));
@@ -1236,6 +1387,62 @@ function App() {
   }, [staffMembers]);
 
   useEffect(() => {
+    const invitedStaff = organisationInvites
+      .filter((invite) => invite.role === 'staff' && invite.businessId === activeBusiness.id)
+      .map((invite) => ({
+        businessId: invite.businessId,
+        name: invite.contactName || invite.adminEmail.split('@')[0],
+        role: 'Staff' as const,
+        email: invite.adminEmail,
+        phone: invite.phone || invite.adminEmail,
+        active: inviteStatus(invite) !== 'expired',
+        clockedIn: false,
+        hoursToday: 0,
+        lastShift: invite.status === 'accepted' ? 'Account active' : 'Invite pending'
+      }));
+
+    if (!invitedStaff.length) return;
+
+    setStaffMembers((current) => {
+      let changed = false;
+      const next = [...current];
+      invitedStaff.forEach((member) => {
+        const index = next.findIndex((item) => item.businessId === member.businessId && staffIdentityMatches(item, { email: member.email || member.phone, name: member.name, role: 'staff', businessId: member.businessId }));
+        if (index === -1) {
+          next.push(member);
+          changed = true;
+        } else if (next[index].lastShift === 'Invite pending' && member.lastShift === 'Account active') {
+          next[index] = { ...next[index], active: true, lastShift: 'Account active' };
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [activeBusiness.id, organisationInvites]);
+
+  useEffect(() => {
+    if (!hasAppwriteConfig || !appwriteDatabaseId || !activeBusiness?.id) return;
+    let cancelled = false;
+
+    fetchPersistedRosterShifts(activeBusiness.id)
+      .then((persistedShifts) => {
+        if (cancelled || !persistedShifts.length) return;
+        setRosterShifts((current) => [
+          ...persistedShifts,
+          ...current.filter((shift) => shift.businessId !== activeBusiness.id)
+        ]);
+        debugPersistence('roster shifts loaded', { businessId: activeBusiness.id, count: persistedShifts.length });
+      })
+      .catch((error) => {
+        debugPersistence('roster shift fetch failed, using local fallback', error instanceof Error ? error.message : error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBusiness.id]);
+
+  useEffect(() => {
     writeStoredValue(workflowStorageKey, workflowStages);
   }, [workflowStages]);
 
@@ -1262,6 +1469,13 @@ function App() {
     const timeout = window.setTimeout(() => setRosterToast(null), 3800);
     return () => window.clearTimeout(timeout);
   }, [rosterToast]);
+
+  useEffect(() => {
+    if (!activeStaffMembers.length) return;
+    if (!activeStaffMembers.some((member) => member.name === rosterStaff)) {
+      setRosterStaff(activeStaffMembers[0].name);
+    }
+  }, [activeStaffMembers, rosterStaff]);
 
   function showWorkflowToast(message: string, tone: WorkflowToast['tone'] = 'success') {
     setWorkflowToast({ id: Date.now(), tone, message });
@@ -1553,7 +1767,7 @@ function App() {
             : member
         ));
         return [
-          { name: adminName, role: 'Staff', email: invite.adminEmail, phone: invite.phone || invite.adminEmail, active: true, clockedIn: false, hoursToday: 0, lastShift: 'New staff member' },
+          { businessId: invite.businessId, name: adminName, role: 'Staff', email: invite.adminEmail, phone: invite.phone || invite.adminEmail, active: true, clockedIn: false, hoursToday: 0, lastShift: 'New staff member' },
           ...current
         ];
       });
@@ -1665,10 +1879,11 @@ function App() {
       const exists = current.some((member) => member.phone === phone || member.name.toLowerCase() === name.toLowerCase());
       if (exists) return current;
       return [
-        { name, role: 'Staff', email, phone: phone || email, active: true, clockedIn: false, hoursToday: 0, lastShift: 'Invite pending' },
+        { businessId: activeBusiness.id, name, role: 'Staff', email, phone: phone || email, active: true, clockedIn: false, hoursToday: 0, lastShift: 'Invite pending' },
         ...current
       ];
     });
+    setRosterStaff(name);
     setStaffInviteName('');
     setStaffInviteEmail('');
     setStaffInvitePhone('');
@@ -1951,10 +2166,13 @@ function App() {
   function addRosterShift() {
     if (!rosterStaff || !rosterDate.trim() || !rosterStart.trim() || !rosterEnd.trim() || !rosterArea.trim()) return;
 
-    const staffRole = staffMembers.find((member) => member.name === rosterStaff)?.role ?? 'Staff';
+    const selectedStaff = activeStaffMembers.find((member) => member.name === rosterStaff)
+      ?? staffMembers.find((member) => member.name === rosterStaff);
+    const staffRole = selectedStaff?.role ?? 'Staff';
     const shift: RosterShift = {
-      id: `RS-${205 + rosterShifts.length}`,
+      id: ID.unique(),
       businessId: activeBusiness.id,
+      staffUserId: selectedStaff ? staffUserIdFor(selectedStaff) : staffUserIdFor(rosterStaff),
       staffName: rosterStaff,
       role: staffRole,
       date: rosterDate.trim(),
@@ -1968,11 +2186,15 @@ function App() {
     setRosterShifts((current) => [shift, ...current]);
     setSmsNotice(`Shift sent to ${shift.staffName} for ${formatRosterDate(shift.date)}, ${shift.start} to ${shift.end}.`);
     showRosterToast(`Shift sent to ${shift.staffName}`);
+    persistRosterShift(shift, authUser?.email || 'business_admin').catch((error) => {
+      console.warn('[Roster] Persist shift failed:', error);
+    });
   }
 
   function updateRosterResponse(shiftId: string, response: ShiftResponse) {
     const shift = rosterShifts.find((item) => item.id === shiftId);
     const respondedAt = nowLabel();
+    const updatedShift = shift ? { ...shift, response, respondedAt, viewedAt: shift.viewedAt || respondedAt } : undefined;
     setRosterShifts((current) => current.map((item) => (item.id === shiftId ? { ...item, response, respondedAt, viewedAt: item.viewedAt || respondedAt } : item)));
     const message = shift
       ? response === 'accepted'
@@ -1983,12 +2205,20 @@ function App() {
       : 'Roster updated.';
     setSmsNotice(message);
     showRosterToast(message, response === 'declined' ? 'warning' : 'success');
+    if (updatedShift) {
+      patchRosterShift(updatedShift).catch((error) => {
+        console.warn('[Roster] Persist response failed:', error);
+      });
+    }
   }
 
   function deleteRosterShift(shiftId: string) {
     const shift = rosterShifts.find((item) => item.id === shiftId);
     setRosterShifts((current) => current.filter((item) => item.id !== shiftId));
     setSmsNotice(shift ? `Deleted ${shift.staffName}'s shift for ${formatRosterDate(shift.date)}.` : 'Shift deleted.');
+    deletePersistedRosterShift(shiftId).catch((error) => {
+      console.warn('[Roster] Delete persisted shift failed:', error);
+    });
   }
 
   function addJobNote(jobId: string, note: string) {
@@ -2031,18 +2261,29 @@ function App() {
   }
 
   function toggleStaffClock(name: string) {
+    const member = staffMembers.find((item) => item.name === name && (!item.businessId || item.businessId === activeBusiness.id));
+    const clockingOut = Boolean(member?.clockedIn);
+    const actionAt = nowLabel();
     setStaffMembers((members) =>
       members.map((member) =>
-        member.name === name
+        member.name === name && (!member.businessId || member.businessId === activeBusiness.id)
           ? {
               ...member,
               clockedIn: !member.clockedIn,
-              clockInAt: member.clockedIn ? undefined : 'Just now',
+              clockInAt: member.clockedIn ? undefined : actionAt,
               hoursToday: member.clockedIn ? Math.max(member.hoursToday, 6.4) : member.hoursToday
             }
           : member
       )
     );
+    const message = clockingOut ? `${name} clocked out at ${actionAt}` : `${name} clocked in at ${actionAt}`;
+    setSmsNotice(message);
+    showRosterToast(message);
+    if (member) {
+      persistStaffClock(member, activeBusiness.id, clockingOut).catch((error) => {
+        console.warn('[Staff clock] Persist clock event failed:', error);
+      });
+    }
   }
 
   if (activeInviteToken) {
@@ -2204,7 +2445,7 @@ function App() {
           <BusinessAdminView
             business={activeBusiness}
             jobs={visibleJobs}
-            staff={staffMembers}
+            staff={activeStaffMembers}
             rosterShifts={activeRosterShifts}
             rosterToast={rosterToast}
             rosterDraft={{ staffName: rosterStaff, date: rosterDate, start: rosterStart, end: rosterEnd, area: rosterArea }}
@@ -2269,7 +2510,7 @@ function App() {
             query={query}
             setQuery={setQuery}
             staffMember={currentStaffMember}
-            rosterShifts={activeRosterShifts.filter((shift) => shift.staffName === currentStaffMember.name)}
+            rosterShifts={activeRosterShifts.filter((shift) => rosterShiftBelongsToStaff(shift, currentStaffMember, authUser))}
             rosterToast={rosterToast}
             updateRosterResponse={updateRosterResponse}
             toggleClock={() => toggleStaffClock(currentStaffMember.name)}
@@ -2890,6 +3131,10 @@ function BusinessAdminView(props: {
   const visibleHistoryJobs = props.jobs;
   const visibleJobsForView = jobsView === 'active' ? activeJobs : jobsView === 'completed' ? completedJobs : visibleHistoryJobs;
   const operationalSelectedJob = visibleJobsForView.find((job) => job.id === props.selectedJob?.id);
+  const latestRosterActivity = rosterActivity(props.rosterShifts).find((item) => item.shift.response === 'accepted' || item.shift.response === 'declined');
+  const clockNotice = props.smsNotice.toLowerCase().includes('clocked') ? props.smsNotice : '';
+  const liveStaffNotice = props.rosterToast?.message || clockNotice || (latestRosterActivity ? `${latestRosterActivity.shift.staffName} ${latestRosterActivity.shift.response} ${latestRosterActivity.shift.start} roster` : '');
+  const liveStaffNoticeTone: WorkflowToast['tone'] = props.rosterToast?.tone ?? (latestRosterActivity?.tone === 'declined' ? 'warning' : 'success');
 
   return (
     <div className="business-admin-layout">
@@ -2905,6 +3150,13 @@ function BusinessAdminView(props: {
           <div><strong>{completedJobs.length}</strong><span>Completed</span></div>
         </div>
       </section>
+
+      {liveStaffNotice && (
+        <div className={`workflow-toast roster admin-live-toast ${liveStaffNoticeTone}`}>
+          {liveStaffNoticeTone === 'success' ? <CheckCircle2 size={17} /> : <Bell size={17} />}
+          <span>{liveStaffNotice}</span>
+        </div>
+      )}
 
       <section className="panel create-job admin-primary-panel">
         <PanelHeader icon={Plus} title="Add order" action="Name, mobile, details" />
@@ -3873,7 +4125,7 @@ function StaffShiftOverview({ staff }: { staff: StaffMember[] }) {
           </div>
           <div className="staff-table">
             {group.staff.length ? group.staff.map((member) => (
-              <div className="staff-table-row" key={member.phone}>
+              <div className="staff-table-row" key={`${member.businessId}-${member.email || member.phone || member.name}`}>
                 <div className="staff-avatar">{member.name.split(' ').map((word) => word[0]).join('').slice(0, 2)}</div>
                 <div>
                   <strong>{member.name}</strong>
