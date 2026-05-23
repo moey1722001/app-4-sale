@@ -135,10 +135,20 @@ async function acceptInvite(databases, users, payload) {
   });
 
   try {
-    await databases.updateDocument(databaseId, organisationsCollectionId, invite.businessId, {
-      adminEmail: invite.adminEmail,
-      contactName: payload.adminName || invite.contactName,
+    await users.updatePrefs(user.$id, {
+      role: invite.role === 'staff' ? 'staff' : 'admin',
+      businessId: invite.businessId,
+      name: payload.adminName || invite.contactName,
     });
+  } catch { /* best-effort */ }
+
+  try {
+    if (invite.role !== 'staff') {
+      await databases.updateDocument(databaseId, organisationsCollectionId, invite.businessId, {
+        adminEmail: invite.adminEmail,
+        contactName: payload.adminName || invite.contactName,
+      });
+    }
   } catch { /* best-effort */ }
 
   return { accepted: true, userId: user.$id, businessId: invite.businessId, businessName: invite.businessName, role: invite.role };

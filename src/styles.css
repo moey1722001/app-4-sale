@@ -832,6 +832,74 @@ h1 {
   gap: 12px;
 }
 
+.staff-invite-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border-radius: 18px;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+}
+
+.staff-invite-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(190px, 1.15fr) minmax(130px, 0.8fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.staff-invite-form input {
+  min-height: 42px;
+  width: 100%;
+  border-radius: 13px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: #ffffff;
+  padding: 0 12px;
+  font: inherit;
+}
+
+.staff-invite-list {
+  display: grid;
+  gap: 8px;
+}
+
+.staff-invite-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.staff-invite-row strong,
+.staff-invite-row span {
+  display: block;
+}
+
+.staff-invite-row span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.staff-invite-row > div:last-child {
+  display: flex;
+  gap: 7px;
+}
+
+.staff-invite-row button {
+  min-height: 32px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #ffffff;
+  color: #0f172a;
+  padding: 6px 10px;
+  font-weight: 850;
+}
+
 .workflow-editor-note {
   margin: 0 0 14px;
   padding: 12px 14px;
@@ -3086,35 +3154,60 @@ h1 {
 }
 
 .business-jobs-nav {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(210px, 0.62fr) minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
-  margin: 8px 0 14px;
-  padding-bottom: 2px;
-  overflow-x: auto;
+  gap: 10px;
+  margin: 8px 0 18px;
 }
 
 .business-jobs-nav button {
-  min-height: 36px;
-  padding: 7px 10px;
+  min-height: 42px;
+  padding: 8px 12px;
   border: 1px solid rgba(15, 23, 42, 0.075);
-  border-radius: 999px;
+  border-radius: 14px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 7px;
+  justify-content: space-between;
+  gap: 9px;
   color: #475569;
   background: #ffffff;
   font-size: 0.86rem;
   font-weight: 850;
   white-space: nowrap;
-  box-shadow: none;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.035);
 }
 
 .business-jobs-nav button.active {
   color: #0f172a;
   border-color: color-mix(in srgb, var(--brand) 24%, white);
   background: color-mix(in srgb, var(--brand) 7%, white);
+}
+
+.queue-focus-card {
+  width: 100%;
+}
+
+.queue-focus-card span {
+  font-size: 0.94rem;
+  font-weight: 950;
+}
+
+.queue-archive-links {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.queue-archive-links button {
+  min-height: 34px;
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: #64748b;
+  background: #ffffff;
+  box-shadow: none;
 }
 
 .business-jobs-nav strong {
@@ -4448,19 +4541,19 @@ h1 {
 
 .simple-order-list.grouped {
   display: grid;
-  gap: 14px;
+  gap: 18px;
 }
 
 .simple-stage-group {
   display: grid;
-  gap: 8px;
+  gap: 9px;
 }
 
 .simple-stage-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 2px;
+  padding: 0 4px;
 }
 
 .simple-stage-heading div {
@@ -4470,9 +4563,11 @@ h1 {
 }
 
 .simple-stage-heading span {
-  color: #0f172a;
-  font-size: 0.9rem;
+  color: #1e293b;
+  font-size: 0.82rem;
   font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .simple-stage-heading strong {
@@ -4501,17 +4596,26 @@ h1 {
 }
 
 .simple-order-card {
-  grid-template-columns: minmax(170px, 0.9fr) minmax(210px, 1fr) minmax(210px, 0.95fr) minmax(210px, auto);
+  grid-template-columns: minmax(170px, 0.9fr) minmax(210px, 1fr) minmax(210px, 0.95fr) minmax(230px, auto);
   align-items: center;
-  gap: 12px;
-  padding: 11px 12px;
-  border-radius: 14px;
-  box-shadow: none;
+  gap: 14px;
+  padding: 13px 14px;
+  border-radius: 16px;
+  border-color: rgba(15, 23, 42, 0.065);
+  background: linear-gradient(180deg, #ffffff, #fbfdff);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.035);
   overflow: hidden;
+}
+
+.simple-order-card:hover,
+.simple-order-card.selected {
+  transform: translateY(-1px);
 }
 
 .simple-order-card p {
   margin: 0;
+  color: #172033;
+  font-weight: 760;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4548,7 +4652,8 @@ h1 {
 
 .simple-order-actions button {
   min-height: 34px;
-  padding: 6px 9px;
+  padding: 7px 11px;
+  border-radius: 999px;
   white-space: nowrap;
   max-width: 100%;
   overflow: hidden;
@@ -4558,6 +4663,12 @@ h1 {
 .simple-order-actions .secondary-simple-action {
   color: #475569;
   background: #ffffff;
+}
+
+.row-detail-hint {
+  color: #94a3b8;
+  font-size: 0.74rem;
+  font-weight: 850;
 }
 
 .job-detail.order-drawer .status-buttons {
@@ -4610,9 +4721,28 @@ h1 {
 }
 
 @media (max-width: 980px) {
+  .business-jobs-nav {
+    grid-template-columns: 1fr;
+  }
+
+  .queue-archive-links {
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
   .simple-order-card {
     grid-template-columns: 1fr;
     align-items: stretch;
+  }
+
+  .staff-invite-form {
+    grid-template-columns: 1fr;
+  }
+
+  .staff-invite-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .simple-order-main,

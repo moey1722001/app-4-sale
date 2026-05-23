@@ -102,7 +102,7 @@ type OrganisationInvite = {
   contactName: string;
   adminEmail: string;
   phone: string;
-  role: 'business_admin';
+  role: 'business_admin' | 'staff';
   status: InviteStatus;
   sentAt: string;
   createdAt: string;
@@ -184,6 +184,7 @@ type JobNotification = {
 type StaffMember = {
   name: string;
   role: 'Owner' | 'Manager' | 'Staff';
+  email?: string;
   phone: string;
   active: boolean;
   clockedIn: boolean;
@@ -519,6 +520,7 @@ const authStorageKey = 'verola.authUser.v2';
 const activeBusinessStorageKey = 'verola.activeBusinessId.v2';
 const jobsStorageKey = 'verola.jobs.v2';
 const rosterStorageKey = 'verola.rosters.v2';
+const staffStorageKey = 'verola.staff.v1';
 const workflowStorageKey = 'verola.workflowStages.v2';
 const smsTemplateStorageKey = 'verola.smsTemplates.v2';
 const masterSmsStorageKey = 'verola.masterSmsSettings.v1';
@@ -537,7 +539,7 @@ const demoEmailByRole: Record<UserRole, string> = {
   admin: 'owner@freshfold.test',
   staff: 'mia@freshfold.test'
 };
-const demoHighlights = [
+const productHighlights = [
   'White-label dashboard for laundromats, mechanics, groomers, cleaners, clinics, and repair shops',
   'Simple job workflow: collected, in progress, ready for pickup, completed',
   'Customer updates are previewed, logged, and sent through the platform SMS provider managed by Super Admin',
@@ -786,6 +788,7 @@ function inviteStatus(invite: OrganisationInvite): InviteStatus {
 function normalizeInvite(invite: Partial<OrganisationInvite> & { id: string; businessId: string; businessName: string; adminEmail: string }): OrganisationInvite {
   const createdAt = invite.createdAt || new Date().toISOString();
   const token = invite.token || invite.id || generateInviteToken();
+  const role = invite.role === 'staff' ? 'staff' : 'business_admin';
   return {
     id: invite.id || `INV-${Date.now()}`,
     token,
@@ -794,7 +797,7 @@ function normalizeInvite(invite: Partial<OrganisationInvite> & { id: string; bus
     contactName: invite.contactName || 'Business owner',
     adminEmail: invite.adminEmail,
     phone: invite.phone || '',
-    role: 'business_admin',
+    role,
     status: invite.status === 'accepted' ? 'accepted' : invite.status === 'expired' ? 'expired' : 'pending',
     sentAt: invite.sentAt || 'Imported invite',
     createdAt,
@@ -862,7 +865,7 @@ function inviteFromUrl(tokenOrId: string): OrganisationInvite | undefined {
     contactName: params.get('contact') || 'Business owner',
     adminEmail: email,
     phone: params.get('phone') || '',
-    role: 'business_admin',
+    role: params.get('role') === 'staff' ? 'staff' : 'business_admin',
     status: 'pending',
     sentAt: 'Invite link',
     createdAt: params.get('created') || new Date().toISOString(),
@@ -877,6 +880,11 @@ function getAppBaseUrl() {
   const hostname = new URL(origin).hostname;
   if (hostname === 'localhost' || hostname === '127.0.0.1') return origin;
   return configured || origin || 'https://verolaa.vercel.app';
+}
+
+function isLocalPreviewHost() {
+  if (typeof window === 'undefined') return false;
+  return ['localhost', '127.0.0.1'].includes(window.location.hostname);
 }
 
 function buildInviteUrl(invite: OrganisationInvite) {
@@ -899,15 +907,22 @@ function buildInviteUrl(invite: OrganisationInvite) {
 function buildPersonalisedInviteMessage(invite: OrganisationInvite) {
   const url = buildInviteUrl(invite);
   const greeting = invite.contactName && invite.contactName !== 'Business owner' ? `Hi ${invite.contactName},` : 'Hi,';
+  const isStaffInvite = invite.role === 'staff';
   const body = [
     greeting,
     '',
-    `Verola has created a branded business portal for ${invite.businessName}.`,
+    isStaffInvite
+      ? `You have been invited to join ${invite.businessName} on Verola as a staff member.`
+      : `Verola has created a branded business portal for ${invite.businessName}.`,
     '',
-    'Use this secure setup link to create your Business Admin account:',
+    isStaffInvite
+      ? 'Use this secure setup link to create your Staff account:'
+      : 'Use this secure setup link to create your Business Admin account:',
     url,
     '',
-    'Once setup is complete, you can add customer jobs, track progress, manage staff workflow, and prepare customer updates from your own branded dashboard.',
+    isStaffInvite
+      ? 'Once setup is complete, you can view jobs, reply to shifts, clock in/out, and work from the staff dashboard.'
+      : 'Once setup is complete, you can add customer jobs, track progress, manage staff workflow, and prepare customer updates from your own branded dashboard.',
     '',
     `This invite is for ${invite.adminEmail} and expires on ${new Date(invite.expiresAt).toLocaleDateString()}.`,
     '',
@@ -915,7 +930,7 @@ function buildPersonalisedInviteMessage(invite: OrganisationInvite) {
   ].join('\n');
 
   return {
-    subject: `Set up ${invite.businessName} on Verola`,
+    subject: isStaffInvite ? `Staff invite to ${invite.businessName}` : `Set up ${invite.businessName} on Verola`,
     body,
     url
   };
@@ -969,7 +984,10 @@ function App() {
   const [newPhone, setNewPhone] = useState('');
   const [newJobNotes, setNewJobNotes] = useState('');
   const [newJobPaid, setNewJobPaid] = useState(false);
-  const [staffMembers, setStaffMembers] = useState(staff);
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>(() => readStoredArray(staffStorageKey, staff));
+  const [staffInviteName, setStaffInviteName] = useState('');
+  const [staffInviteEmail, setStaffInviteEmail] = useState('');
+  const [staffInvitePhone, setStaffInvitePhone] = useState('');
   const [newBusinessName, setNewBusinessName] = useState('');
   const [newBusinessContactName, setNewBusinessContactName] = useState('');
   const [newBusinessIndustry, setNewBusinessIndustry] = useState('');
@@ -1058,6 +1076,9 @@ function App() {
   const loginBusinessByEmail = loginRole === 'admin' ? businesses.find((business) => business.adminEmail?.toLowerCase() === loginEmail.trim().toLowerCase()) : undefined;
   const loginBusiness = loginUser?.businessId ? businesses.find((business) => business.id === loginUser.businessId) : loginBusinessByEmail;
   const activeBrand = brandFromBusiness(activeBusiness);
+  const currentStaffMember = authUser?.role === 'staff'
+    ? staffMembers.find((member) => member.email === authUser.email || member.name.toLowerCase() === authUser.name.toLowerCase() || member.phone === authUser.email) ?? staffMembers[0]
+    : staffMembers[2] ?? staffMembers[0];
   const loginBrand = loginRole === 'super' ? platformBrand : brandFromBusiness(loginBusiness);
   const canPreviewPortals = Boolean(authUser && (authUser.role === 'super' || import.meta.env.DEV || !hasAppwriteConfig));
   const visiblePortals = canPreviewPortals ? (Object.keys(portalMeta) as Portal[]) : authUser ? [authUser.role] : [];
@@ -1097,7 +1118,7 @@ function App() {
   }, [portal, activeBusiness.id, staffMembers]);
 
   function resetDemoData() {
-    [businessStorageKey, inviteStorageKey, userStorageKey, authStorageKey, activeBusinessStorageKey, jobsStorageKey, rosterStorageKey, workflowStorageKey, smsTemplateStorageKey, masterSmsStorageKey, smsLogsStorageKey].forEach((key) => localStorage.removeItem(key));
+    [businessStorageKey, inviteStorageKey, userStorageKey, authStorageKey, activeBusinessStorageKey, jobsStorageKey, rosterStorageKey, staffStorageKey, workflowStorageKey, smsTemplateStorageKey, masterSmsStorageKey, smsLogsStorageKey].forEach((key) => localStorage.removeItem(key));
     window.location.href = '/overview';
   }
 
@@ -1209,6 +1230,10 @@ function App() {
   useEffect(() => {
     writeStoredArray(rosterStorageKey, rosterShifts);
   }, [rosterShifts]);
+
+  useEffect(() => {
+    writeStoredArray(staffStorageKey, staffMembers);
+  }, [staffMembers]);
 
   useEffect(() => {
     writeStoredValue(workflowStorageKey, workflowStages);
@@ -1405,15 +1430,11 @@ function App() {
         return;
       }
 
-      await navigator.clipboard?.writeText(`${subject}\n\n${body}`);
-      setCopiedInviteId(invite.id);
-      setInviteNotice('Email sending is not configured. A personalised Verola invite was copied so you can send it manually.');
-      debugInvite('email sending unavailable, personalised invite copied', { token: invite.token, businessId: invite.businessId });
+      setInviteNotice('Email sending is not configured. Configure the Appwrite invite function before sending invites.');
+      debugInvite('email sending unavailable', { token: invite.token, businessId: invite.businessId });
     } catch (error) {
-      await navigator.clipboard?.writeText(`${subject}\n\n${body}`);
-      setCopiedInviteId(invite.id);
-      setOrganisationInvites((current) => current.map((item) => (item.id === invite.id ? { ...item, sentAt: 'Email failed - link copied' } : item)));
-      setInviteNotice(`Invite email could not be sent. The personalised invite was copied instead.${error instanceof Error ? ` ${error.message}` : ''}`);
+      setOrganisationInvites((current) => current.map((item) => (item.id === invite.id ? { ...item, sentAt: 'Email failed' } : item)));
+      setInviteNotice(`Invite email could not be sent.${error instanceof Error ? ` ${error.message}` : ''}`);
     } finally {
       setInviteSendingId('');
     }
@@ -1520,16 +1541,31 @@ function App() {
       return [{ ...invite, status: 'accepted', sentAt: 'Accepted from invite link' }, ...current];
     });
     setBusinesses((current) => (current.some((business) => business.id === invite.businessId) ? current : [businessFromInvite(invite), ...current]));
-    const user: AuthUser = { email: invite.adminEmail, name: adminName, role: 'admin', businessId: invite.businessId };
+    const userRole: UserRole = invite.role === 'staff' ? 'staff' : 'admin';
+    const user: AuthUser = { email: invite.adminEmail, name: adminName, role: userRole, businessId: invite.businessId };
     setCreatedUsers((current) => [user, ...current.filter((candidate) => candidate.email !== user.email)]);
+    if (invite.role === 'staff') {
+      setStaffMembers((current) => {
+        const exists = current.some((member) => member.phone === invite.phone || member.name.toLowerCase() === adminName.toLowerCase());
+        if (exists) return current.map((member) => (
+          member.phone === invite.phone || member.name.toLowerCase() === adminName.toLowerCase()
+            ? { ...member, name: adminName, phone: invite.phone || member.phone, active: true }
+            : member
+        ));
+        return [
+          { name: adminName, role: 'Staff', email: invite.adminEmail, phone: invite.phone || invite.adminEmail, active: true, clockedIn: false, hoursToday: 0, lastShift: 'New staff member' },
+          ...current
+        ];
+      });
+    }
     setAuthUser(user);
     setActiveBusinessId(invite.businessId);
-    setPortal('admin');
+    setPortal(userRole);
     setLoginError('');
     setSetupDraft({ name: '', password: '', error: '' });
     debugInvite('invite accepted and account linked', { id: invite.id, businessId: invite.businessId, email: invite.adminEmail });
-    window.history.replaceState({}, '', '/business-admin');
-    setCurrentPath('/business-admin');
+    window.history.replaceState({}, '', portalPaths[userRole]);
+    setCurrentPath(portalPaths[userRole]);
   }
 
   async function addBusiness() {
@@ -1597,6 +1633,48 @@ function App() {
     setNewBusinessPhone('');
     setNewBusinessAdminEmail('');
     if (business.adminEmail) await sendInviteEmailForInvite(invite);
+  }
+
+  async function inviteStaffMember() {
+    const name = staffInviteName.trim();
+    const email = staffInviteEmail.trim().toLowerCase();
+    const phone = staffInvitePhone.trim();
+    if (!name || !email) {
+      setInviteNotice('Add the staff member name and email before sending an invite.');
+      return;
+    }
+
+    const now = new Date();
+    const invite: OrganisationInvite = {
+      id: `STAFF-INV-${Date.now()}`,
+      token: generateInviteToken(),
+      businessId: activeBusiness.id,
+      businessName: activeBusiness.name,
+      contactName: name,
+      adminEmail: email,
+      phone,
+      role: 'staff',
+      status: 'pending',
+      sentAt: 'Staff invite created',
+      createdAt: now.toISOString(),
+      expiresAt: addDays(now, 14)
+    };
+
+    setOrganisationInvites((current) => [invite, ...current]);
+    setStaffMembers((current) => {
+      const exists = current.some((member) => member.phone === phone || member.name.toLowerCase() === name.toLowerCase());
+      if (exists) return current;
+      return [
+        { name, role: 'Staff', email, phone: phone || email, active: true, clockedIn: false, hoursToday: 0, lastShift: 'Invite pending' },
+        ...current
+      ];
+    });
+    setStaffInviteName('');
+    setStaffInviteEmail('');
+    setStaffInvitePhone('');
+    debugInvite('staff invite token created', { token: invite.token, businessId: invite.businessId, email: invite.adminEmail, expiresAt: invite.expiresAt });
+    debugInvite('staff invite URL generated', { token: invite.token, url: buildInviteUrl(invite) });
+    await sendInviteEmailForInvite(invite);
   }
 
   async function deleteBusiness(businessId: string) {
@@ -2164,6 +2242,19 @@ function App() {
             newJobPaid={newJobPaid}
             setNewJobPaid={setNewJobPaid}
             addJob={addJob}
+            staffInviteName={staffInviteName}
+            setStaffInviteName={setStaffInviteName}
+            staffInviteEmail={staffInviteEmail}
+            setStaffInviteEmail={setStaffInviteEmail}
+            staffInvitePhone={staffInvitePhone}
+            setStaffInvitePhone={setStaffInvitePhone}
+            inviteStaffMember={inviteStaffMember}
+            staffInvites={organisationInvites.filter((invite) => invite.businessId === activeBusiness.id && invite.role === 'staff')}
+            copiedInviteId={copiedInviteId}
+            inviteSendingId={inviteSendingId}
+            inviteNotice={inviteNotice}
+            copyInviteLink={copyInviteLink}
+            sendInviteEmail={sendInviteEmail}
           />
         )}
 
@@ -2177,11 +2268,11 @@ function App() {
             workflowStages={workflowStages}
             query={query}
             setQuery={setQuery}
-            staffMember={staffMembers[2]}
-            rosterShifts={activeRosterShifts.filter((shift) => shift.staffName === staffMembers[2].name)}
+            staffMember={currentStaffMember}
+            rosterShifts={activeRosterShifts.filter((shift) => shift.staffName === currentStaffMember.name)}
             rosterToast={rosterToast}
             updateRosterResponse={updateRosterResponse}
-            toggleClock={() => toggleStaffClock(staffMembers[2].name)}
+            toggleClock={() => toggleStaffClock(currentStaffMember.name)}
           />
         )}
       </main>
@@ -2335,10 +2426,10 @@ function SuperAdminView({
       </section>
 
       <section className="panel super-invite-panel">
-        <PanelHeader icon={Mail} title="Company Invites" action={`${organisationInvites.filter((invite) => inviteStatus(invite) === 'pending').length} pending`} />
+        <PanelHeader icon={Mail} title="Company Invites" action={`${organisationInvites.filter((invite) => invite.role === 'business_admin' && inviteStatus(invite) === 'pending').length} pending`} />
         {inviteNotice && <div className="inline-notice">{inviteNotice}</div>}
         <div className="invite-list">
-          {organisationInvites.map((invite) => (
+          {organisationInvites.filter((invite) => invite.role === 'business_admin').map((invite) => (
             <div className="invite-row" key={invite.id}>
               <div>
                 <strong>{invite.businessName}</strong>
@@ -2553,7 +2644,7 @@ function ProductOverviewView() {
         </div>
       </section>
       <section className="overview-grid">
-        {demoHighlights.map((highlight) => (
+        {productHighlights.map((highlight) => (
           <article className="overview-card" key={highlight}>
             <CheckCircle2 size={20} />
             <p>{highlight}</p>
@@ -2586,6 +2677,8 @@ function InviteAcceptView({
   const brand = useBranding();
   const status = invite ? inviteStatus(invite) : undefined;
   const hasMagicParams = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('userId');
+  const isStaffInvite = invite?.role === 'staff';
+  const roleLabel = isStaffInvite ? 'Staff' : 'Business Admin';
 
   const errorTitle = !invite
     ? 'Invite not found'
@@ -2598,7 +2691,7 @@ function InviteAcceptView({
   const errorCopy = !invite
     ? 'This invite link is invalid or could not be found. Check the link or ask the platform owner to resend.'
     : status === 'accepted'
-      ? 'This setup link has already been used. Sign in with your business admin account.'
+      ? `This setup link has already been used. Sign in with your ${isStaffInvite ? 'staff' : 'business admin'} account.`
       : 'This setup link has expired. Ask the platform owner to send a new invite.';
 
   // The token or ID used to complete setup
@@ -2611,7 +2704,7 @@ function InviteAcceptView({
           <BrandMark className="login-logo" />
           <div>
             <strong>{brand.name}</strong>
-            <span>Business setup · Powered by {brand.poweredBy}</span>
+            <span>{roleLabel} setup · Powered by {brand.poweredBy}</span>
           </div>
         </div>
 
@@ -2620,7 +2713,7 @@ function InviteAcceptView({
             <div>
               <span className="eyebrow">Checking invite</span>
               <h1>Loading setup link</h1>
-              <p className="login-copy">We’re verifying this Verola invite and preparing the business setup page.</p>
+              <p className="login-copy">We’re verifying this Verola invite and preparing your setup page.</p>
             </div>
           </>
         ) : invite && status === 'pending' ? (
@@ -2632,14 +2725,14 @@ function InviteAcceptView({
                 {invite.contactName && invite.contactName !== 'Business owner'
                   ? `Hi ${invite.contactName} — your `
                   : 'Your '}
-                {invite.businessName} workspace on Verola is ready. Create your admin account to get started.
+                {invite.businessName} workspace on Verola is ready. Create your {isStaffInvite ? 'staff' : 'admin'} account to get started.
               </p>
             </div>
             <div className="login-help">
               <strong>Invite details</strong>
               <span>Organisation: {invite.businessName}</span>
               <span>Email: {invite.adminEmail}</span>
-              <span>Role: Business Admin</span>
+              <span>Role: {roleLabel}</span>
               <span>Expires: {new Date(invite.expiresAt).toLocaleDateString()}</span>
               {hasMagicParams && <span>Verified via email link ✓</span>}
             </div>
@@ -2775,6 +2868,19 @@ function BusinessAdminView(props: {
   newJobPaid: boolean;
   setNewJobPaid: (value: boolean) => void;
   addJob: () => void;
+  staffInviteName: string;
+  setStaffInviteName: (value: string) => void;
+  staffInviteEmail: string;
+  setStaffInviteEmail: (value: string) => void;
+  staffInvitePhone: string;
+  setStaffInvitePhone: (value: string) => void;
+  inviteStaffMember: () => void;
+  staffInvites: OrganisationInvite[];
+  copiedInviteId: string;
+  inviteSendingId: string;
+  inviteNotice: string;
+  copyInviteLink: (inviteId: string) => void;
+  sendInviteEmail: (inviteId: string) => void;
 }) {
   const pendingRosterReplies = props.rosterShifts.filter((shift) => shift.response === 'sent').length;
   const [jobsView, setJobsView] = useState<BusinessJobsView>('active');
@@ -2877,9 +2983,93 @@ function BusinessAdminView(props: {
 
         <details className="panel admin-drawer">
           <summary><Users size={18} /> Staff and shifts <span>{props.staff.length} users</span></summary>
+          <StaffInvitePanel
+            name={props.staffInviteName}
+            setName={props.setStaffInviteName}
+            email={props.staffInviteEmail}
+            setEmail={props.setStaffInviteEmail}
+            phone={props.staffInvitePhone}
+            setPhone={props.setStaffInvitePhone}
+            inviteStaffMember={props.inviteStaffMember}
+            invites={props.staffInvites}
+            copiedInviteId={props.copiedInviteId}
+            inviteSendingId={props.inviteSendingId}
+            inviteNotice={props.inviteNotice}
+            copyInviteLink={props.copyInviteLink}
+            sendInviteEmail={props.sendInviteEmail}
+          />
           <StaffShiftOverview staff={props.staff} />
         </details>
       </section>
+    </div>
+  );
+}
+
+function StaffInvitePanel({
+  name,
+  setName,
+  email,
+  setEmail,
+  phone,
+  setPhone,
+  inviteStaffMember,
+  invites,
+  copiedInviteId,
+  inviteSendingId,
+  inviteNotice,
+  copyInviteLink,
+  sendInviteEmail
+}: {
+  name: string;
+  setName: (value: string) => void;
+  email: string;
+  setEmail: (value: string) => void;
+  phone: string;
+  setPhone: (value: string) => void;
+  inviteStaffMember: () => void;
+  invites: OrganisationInvite[];
+  copiedInviteId: string;
+  inviteSendingId: string;
+  inviteNotice: string;
+  copyInviteLink: (inviteId: string) => void;
+  sendInviteEmail: (inviteId: string) => void;
+}) {
+  const pendingInvites = invites.filter((invite) => inviteStatus(invite) === 'pending');
+
+  return (
+    <div className="staff-invite-panel">
+      <div className="detail-section-title">
+        <strong>Invite staff</strong>
+        <span>{pendingInvites.length} pending</span>
+      </div>
+      <div className="staff-invite-form">
+        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Staff name" />
+        <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email address" type="email" />
+        <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Mobile optional" />
+        <button className="primary-action" onClick={inviteStaffMember} disabled={!name.trim() || !email.trim()}>
+          <Mail size={17} />
+          Send invite
+        </button>
+      </div>
+      {inviteNotice && <div className="inline-notice compact">{inviteNotice}</div>}
+      {invites.length > 0 && (
+        <div className="staff-invite-list">
+          {invites.slice(0, 4).map((invite) => (
+            <div className="staff-invite-row" key={invite.id}>
+              <div>
+                <strong>{invite.contactName}</strong>
+                <span>{invite.adminEmail} · {inviteStatus(invite)}</span>
+              </div>
+              <div>
+                <button onClick={() => sendInviteEmail(invite.id)} disabled={inviteSendingId === invite.id || inviteStatus(invite) !== 'pending'}>
+                  {inviteSendingId === invite.id ? 'Sending' : 'Send'}
+                </button>
+                <button onClick={() => copyInviteLink(invite.id)}>{copiedInviteId === invite.id ? 'Copied' : 'Copy link'}</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2958,20 +3148,22 @@ function BusinessJobsNav({
   completedCount: number;
   historyCount: number;
 }) {
-  const items: Array<{ key: BusinessJobsView; label: string; count: number }> = [
-    { key: 'active', label: 'Active Jobs', count: activeCount },
-    { key: 'completed', label: "Today's Completed", count: completedCount },
-    { key: 'history', label: 'History/Search', count: historyCount }
-  ];
-
   return (
     <div className="business-jobs-nav" aria-label="Jobs view">
-      {items.map((item) => (
-        <button key={item.key} className={activeView === item.key ? 'active' : ''} onClick={() => setView(item.key)}>
-          <span>{item.label}</span>
-          <strong>{item.count}</strong>
+      <button className={`queue-focus-card ${activeView === 'active' ? 'active' : ''}`} onClick={() => setView('active')}>
+        <span>Active queue</span>
+        <strong>{activeCount}</strong>
+      </button>
+      <div className="queue-archive-links">
+        <button className={activeView === 'completed' ? 'active' : ''} onClick={() => setView('completed')}>
+          <span>Completed today</span>
+          <strong>{completedCount}</strong>
         </button>
-      ))}
+        <button className={activeView === 'history' ? 'active' : ''} onClick={() => setView('history')}>
+          <span>Past jobs</span>
+          <strong>{historyCount}</strong>
+        </button>
+      </div>
     </div>
   );
 }
@@ -3067,6 +3259,7 @@ function SimpleOrderList({
                       <div className="simple-order-actions" onClick={(event) => event.stopPropagation()}>
                         {nextStatus && <button className="primary-simple-action" onClick={() => updateJobStatus(job.id, nextStatus)}>{queueActionLabel(nextStatus, workflowStages)}</button>}
                         <button className="secondary-simple-action" onClick={() => toggleJobPaid(job.id)}>{job.paid ? 'Mark unpaid' : 'Mark paid'}</button>
+                        <span className="row-detail-hint">Details</span>
                       </div>
                     </article>
                   );
@@ -3136,8 +3329,8 @@ function HistoryJobsList({
     return (
       <div className="simple-empty-orders">
         <Search size={22} />
-        <strong>No history found</strong>
-        <p>Use search above to find past customers and orders.</p>
+        <strong>No past jobs found</strong>
+        <p>Use search above to find previous customers and orders.</p>
       </div>
     );
   }
