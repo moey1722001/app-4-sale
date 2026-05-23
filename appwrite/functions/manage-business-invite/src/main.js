@@ -28,13 +28,24 @@ function createAppwriteServices(req) {
     .setProject(process.env.APPWRITE_FUNCTION_PROJECT_ID)
     .setKey(apiKey);
 
-  return { configured: true, databases: new Databases(client), users: new Users(client), account: new Account(client) };
+  return {
+    configured: true,
+    databases: new Databases(client),
+    users: new Users(client),
+    account: new Account(client),
+  };
 }
 
 async function findOrCreateUser(users, email, name) {
   try {
     const list = await users.list([Query.equal('email', email)]);
-    if (list.users.length > 0) return list.users[0];
+    if (list.users.length > 0) {
+      const user = list.users[0];
+      if (name && (!user.name || user.name === email.split('@')[0])) {
+        try { await users.updateName(user.$id, name); } catch { /* best-effort */ }
+      }
+      return user;
+    }
   } catch { /* search failed, attempt create */ }
   return await users.create(ID.unique(), email, undefined, undefined, name || email.split('@')[0]);
 }
@@ -128,7 +139,7 @@ async function acceptInvite(databases, users, payload) {
       adminEmail: invite.adminEmail,
       contactName: payload.adminName || invite.contactName,
     });
-  } catch { /* organisation update is best-effort */ }
+  } catch { /* best-effort */ }
 
   return { accepted: true, userId: user.$id, businessId: invite.businessId, businessName: invite.businessName, role: invite.role };
 }
@@ -139,7 +150,6 @@ export default async ({ req, res, log, error }) => {
     const action = payload.action;
     const services = createAppwriteServices(req);
 
-    // --- send_invite: store invite + send email via Appwrite magic URL ---
     if (action === 'send_invite' || action === 'send_invite_email') {
       if (!payload.token || !payload.businessId || !payload.businessName || !payload.adminEmail) {
         return json(res, { emailSent: false, error: 'Missing invite fields.' }, 400);
@@ -156,7 +166,7 @@ export default async ({ req, res, log, error }) => {
         inviteStoreError = services.error;
         log(inviteStoreError);
       } else {
-        // 1. Store invite
+        // 1. Store invite (best-effort; invite params also embedded in URL as fallback)
         try {
           await upsertInvite(services.databases, payload);
           inviteStored = true;
@@ -165,42 +175,51 @@ export default async ({ req, res, log, error }) => {
           log(`Invite storage failed: ${inviteStoreError}`);
         }
 
-        // 2. Find or create Appwrite user for this email
+        // 2. Find or create user (updates name if unset so template shows correct greeting)
         try {
           const user = await findOrCreateUser(services.users, payload.adminEmail, payload.contactName);
           appwriteUserId = user.$id;
+          emailConfigured = true;
 
-          // 3. Send invite via Appwrite magic URL (uses Appwrite's built-in email system)
-          // Build callback URL: APP_BASE_URL/accept-invite/INVITE_ID
-          // Appwrite will append ?userId=xxx&secret=xxx automatically
+          // Embed all invite details in callback URL so the accept page can reconstruct
+          // the invite from query params if the DB lookup fails.
+          // Appwrite appends &userId=&secret= to this URL automatically.
           const baseUrl = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
           const inviteId = payload.inviteId || '';
-          const callbackUrl = inviteId
+          const inviteParams = new URLSearchParams({
+            businessId: payload.businessId || '',
+            business: payload.businessName || '',
+            email: payload.adminEmail || '',
+            role: payload.role || 'business_admin',
+            contact: payload.contactName || '',
+            expires: payload.expiresAt || '',
+            inviteId,
+          });
+          if (payload.phone) inviteParams.set('phone', payload.phone);
+          const callbackBase = inviteId
             ? `${baseUrl}/accept-invite/${encodeURIComponent(inviteId)}`
             : `${baseUrl}/accept-invite`;
+          const callbackUrl = `${callbackBase}?${inviteParams.toString()}`;
 
-          await services.account.createMagicURLToken(appwriteUserId, payload.adminEmail, callbackUrl);
+          // Send via Appwrite's built-in email system (template customised in Console)
+          await services.account.createMagicURLToken(user.$id, payload.adminEmail, callbackUrl);
           emailSent = true;
-          emailConfigured = true;
-          log(`Magic URL invite sent to ${payload.adminEmail} for ${payload.businessName}`);
+          log(`Invite email sent to ${payload.adminEmail} for ${payload.businessName}`);
         } catch (ex) {
-          emailError = ex?.message || 'Could not send invite email via Appwrite.';
-          log(`Magic URL email failed: ${emailError}`);
-          emailConfigured = true; // Appwrite IS configured, email just failed
+          emailError = ex?.message || 'Could not send invite email.';
+          log(`Email send failed: ${emailError}`);
         }
       }
 
       return json(res, { emailSent, emailConfigured, inviteStored, inviteStoreError, appwriteUserId, emailError }, emailSent ? 200 : 202);
     }
 
-    // --- lookup_invite: by token hash ---
     if (action === 'lookup_invite') {
       if (!services.configured) return json(res, { invite: null, error: services.error }, 503);
       const invite = await lookupInviteByToken(services.databases, payload.token);
       return json(res, { invite }, invite ? 200 : 404);
     }
 
-    // --- lookup_invite_by_id: by document ID (used after clicking magic URL email) ---
     if (action === 'lookup_invite_by_id') {
       if (!services.configured) return json(res, { invite: null, error: services.error }, 503);
       if (!payload.inviteId) return json(res, { invite: null, error: 'Missing inviteId.' }, 400);
@@ -208,7 +227,6 @@ export default async ({ req, res, log, error }) => {
       return json(res, { invite }, invite ? 200 : 404);
     }
 
-    // --- accept_invite: validate + create account + assign tenant ---
     if (action === 'accept_invite') {
       if (!services.configured) return json(res, { accepted: false, error: services.error }, 503);
       const result = await acceptInvite(services.databases, services.users, payload);
