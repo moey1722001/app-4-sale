@@ -7,7 +7,6 @@
     "start": "node src/main.js"
   },
   "dependencies": {
-    "node-appwrite": "^15.0.0",
-    "nodemailer": "^8.0.7"
+    "node-appwrite": "^15.0.0"
   }
 }
