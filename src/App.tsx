@@ -964,7 +964,7 @@ function App() {
   const [jobs, setJobs] = useState<Job[]>(() => readStoredArray(jobsStorageKey, seedJobs));
   const [rosterShifts, setRosterShifts] = useState<RosterShift[]>(() => readStoredArray(rosterStorageKey, seedRosterShifts));
   const [query, setQuery] = useState('');
-  const [selectedJobId, setSelectedJobId] = useState(seedJobs[0].id);
+  const [selectedJobId, setSelectedJobId] = useState<string | undefined>(undefined);
   const [newCustomer, setNewCustomer] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newJobNotes, setNewJobNotes] = useState('');
@@ -1044,7 +1044,7 @@ function App() {
     () => rosterShifts.filter((shift) => shift.businessId === activeBusiness.id),
     [activeBusiness.id, rosterShifts]
   );
-  const selectedJob = visibleJobs.find((job) => job.id === selectedJobId) ?? visibleJobs[0];
+  const selectedJob = visibleJobs.find((job) => job.id === selectedJobId);
   const inferredAdminUsers = businesses
     .filter((business) => business.adminEmail)
     .map((business) => ({
@@ -2777,18 +2777,13 @@ function BusinessAdminView(props: {
   addJob: () => void;
 }) {
   const pendingRosterReplies = props.rosterShifts.filter((shift) => shift.response === 'sent').length;
-  const [orderFilter, setOrderFilter] = useState<SimpleOrderFilter>('all');
   const [jobsView, setJobsView] = useState<BusinessJobsView>('active');
   const activeJobs = props.jobs.filter((job) => job.status !== 'completed');
   const completedJobs = props.jobs.filter((job) => job.status === 'completed');
   const readyJobs = activeJobs.filter((job) => job.status === 'ready_for_pickup').length;
-  const operationalJobs = useMemo(
-    () => activeJobs.filter((job) => simpleOrderFilterMatches(job, orderFilter)),
-    [activeJobs, orderFilter]
-  );
   const visibleHistoryJobs = props.jobs;
-  const visibleJobsForView = jobsView === 'active' ? operationalJobs : jobsView === 'completed' ? completedJobs : visibleHistoryJobs;
-  const operationalSelectedJob = visibleJobsForView.find((job) => job.id === props.selectedJob?.id) ?? visibleJobsForView[0];
+  const visibleJobsForView = jobsView === 'active' ? activeJobs : jobsView === 'completed' ? completedJobs : visibleHistoryJobs;
+  const operationalSelectedJob = visibleJobsForView.find((job) => job.id === props.selectedJob?.id);
 
   return (
     <div className="business-admin-layout">
@@ -2831,11 +2826,10 @@ function BusinessAdminView(props: {
           </div>
         )}
         <BusinessJobsNav activeView={jobsView} setView={setJobsView} activeCount={activeJobs.length} completedCount={completedJobs.length} historyCount={props.jobs.length} />
-        {jobsView === 'active' && <SimpleOrderTabs jobs={activeJobs} activeFilter={orderFilter} setFilter={setOrderFilter} workflowStages={props.workflowStages} />}
         <div className={operationalSelectedJob ? 'simple-order-shell has-drawer' : 'simple-order-shell'}>
           {jobsView === 'active' && (
             <SimpleOrderList
-              jobs={operationalJobs}
+              jobs={activeJobs}
               selectedJobId={operationalSelectedJob?.id}
               setSelectedJobId={props.setSelectedJobId}
               workflowStages={props.workflowStages}
@@ -2971,7 +2965,7 @@ function BusinessJobsNav({
   ];
 
   return (
-    <div className="business-jobs-nav">
+    <div className="business-jobs-nav" aria-label="Jobs view">
       {items.map((item) => (
         <button key={item.key} className={activeView === item.key ? 'active' : ''} onClick={() => setView(item.key)}>
           <span>{item.label}</span>
@@ -3037,31 +3031,51 @@ function SimpleOrderList({
     );
   }
 
+  const groups: JobStatus[] = ['collected', 'in_progress', 'ready_for_pickup'];
+
   return (
-    <div className="simple-order-list">
-      {jobs.map((job) => {
-        const notification = latestNotification(job);
-        const nextStatus = nextJobStatus(job.status);
+    <div className="simple-order-list grouped">
+      {groups.map((status) => {
+        const stageJobs = jobs.filter((job) => job.status === status);
         return (
-          <article className={`simple-order-card ${selectedJobId === job.id ? 'selected' : ''}`} key={job.id} onClick={() => setSelectedJobId(job.id)}>
-            <div className="simple-order-main">
+          <section className="simple-stage-group" key={status}>
+            <div className="simple-stage-heading">
               <div>
-                <strong>{job.customer}</strong>
-                <span>{job.phone}</span>
+                <span>{simpleStageLabel(status, workflowStages)}</span>
+                <strong>{stageJobs.length}</strong>
               </div>
-              <StatusBadge status={job.status} workflowStages={workflowStages} />
             </div>
-            <p>{job.item}</p>
-            <div className="simple-order-meta">
-              <PaymentBadge paid={job.paid} />
-              <SmsStatePill notification={notification} />
-              <span>Updated {lastUpdateLabel(job)}</span>
-            </div>
-            <div className="simple-order-actions" onClick={(event) => event.stopPropagation()}>
-              {nextStatus && <button className="primary-simple-action" onClick={() => updateJobStatus(job.id, nextStatus)}>{stageActionLabel(nextStatus, workflowStages)}</button>}
-              <button onClick={() => toggleJobPaid(job.id)}>{job.paid ? 'Mark unpaid' : 'Mark paid'}</button>
-            </div>
-          </article>
+            {stageJobs.length ? (
+              <div className="simple-stage-rows">
+                {stageJobs.map((job) => {
+                  const notification = latestNotification(job);
+                  const nextStatus = nextJobStatus(job.status);
+                  return (
+                    <article className={`simple-order-card ${selectedJobId === job.id ? 'selected' : ''}`} key={job.id} onClick={() => setSelectedJobId(job.id)}>
+                      <div className="simple-order-main">
+                        <div>
+                          <strong>{job.customer}</strong>
+                          <span>{job.phone}</span>
+                        </div>
+                      </div>
+                      <p>{job.item}</p>
+                      <div className="simple-order-meta">
+                        <PaymentBadge paid={job.paid} />
+                        <SmsStatePill notification={notification} />
+                        <span>Updated {lastUpdateLabel(job)}</span>
+                      </div>
+                      <div className="simple-order-actions" onClick={(event) => event.stopPropagation()}>
+                        {nextStatus && <button className="primary-simple-action" onClick={() => updateJobStatus(job.id, nextStatus)}>{queueActionLabel(nextStatus, workflowStages)}</button>}
+                        <button className="secondary-simple-action" onClick={() => toggleJobPaid(job.id)}>{job.paid ? 'Mark unpaid' : 'Mark paid'}</button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="simple-stage-empty">No jobs in {simpleStageLabel(status, workflowStages).toLowerCase()}.</div>
+            )}
+          </section>
         );
       })}
     </div>
@@ -3816,6 +3830,18 @@ function stageActionLabel(status: JobStatus, workflowStages?: Record<JobStatus, 
   return configured || simpleStageAction(status);
 }
 
+function queueActionLabel(status: JobStatus, workflowStages?: Record<JobStatus, WorkflowStage>) {
+  const configured = workflowStages?.[status]?.verb?.trim();
+  if (configured && configured !== simpleStageAction(status)) return configured.replace(/^Move to\s+/i, '');
+  const labels: Record<JobStatus, string> = {
+    collected: 'Received',
+    in_progress: 'Start',
+    ready_for_pickup: 'Ready',
+    completed: 'Complete'
+  };
+  return labels[status];
+}
+
 function simpleOrderFilterMatches(job: Job, filter: SimpleOrderFilter) {
   if (filter === 'collected') return job.status === 'collected';
   if (filter === 'in_progress') return job.status === 'in_progress';
@@ -4051,28 +4077,23 @@ function JobDetail({
       </div>
 
       {updateJobStatus && job.status !== 'completed' ? (
-        <>
+        <div className="detail-next-step">
         <div className="detail-section-title">
-          <strong>Update status</strong>
+          <strong>Next step</strong>
           <span>Automatically notifies customer via SMS</span>
         </div>
-        <div className="status-buttons">
-          {statusFlow.map((status) => (
-            <button
-              key={status}
-              className={`status-action ${job.status === status ? 'current' : ''}`}
-              disabled={job.status === status}
-              onClick={() => updateJobStatus(job.id, status)}
-            >
-              {status === 'collected' && <Shirt size={18} />}
-              {status === 'in_progress' && <Wrench size={18} />}
-              {status === 'ready_for_pickup' && <Send size={18} />}
-              {status === 'completed' && <Check size={18} />}
-              <span>{stageActionLabel(status, workflowStages)}</span>
+        <div className="detail-next-card">
+          <div>
+            <span>Current stage</span>
+            <strong>{simpleStageLabel(job.status, workflowStages)}</strong>
+          </div>
+          {nextJobStatus(job.status) && (
+            <button className="primary-simple-action" onClick={() => updateJobStatus(job.id, nextJobStatus(job.status)!)}>
+              {queueActionLabel(nextJobStatus(job.status)!, workflowStages)}
             </button>
-          ))}
+          )}
         </div>
-        </>
+        </div>
       ) : (
         <div className="progress-readonly">
           {statusFlow.map((status, index) => (

@@ -3086,25 +3086,29 @@ h1 {
 }
 
 .business-jobs-nav {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  align-items: center;
   gap: 8px;
-  margin: 10px 0 12px;
+  margin: 8px 0 14px;
+  padding-bottom: 2px;
+  overflow-x: auto;
 }
 
 .business-jobs-nav button {
-  min-height: 48px;
-  padding: 10px 12px;
+  min-height: 36px;
+  padding: 7px 10px;
   border: 1px solid rgba(15, 23, 42, 0.075);
-  border-radius: 14px;
-  display: flex;
+  border-radius: 999px;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: center;
+  gap: 7px;
   color: #475569;
   background: #ffffff;
-  font-weight: 900;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.035);
+  font-size: 0.86rem;
+  font-weight: 850;
+  white-space: nowrap;
+  box-shadow: none;
 }
 
 .business-jobs-nav button.active {
@@ -3114,14 +3118,14 @@ h1 {
 }
 
 .business-jobs-nav strong {
-  min-width: 26px;
-  height: 26px;
+  min-width: 21px;
+  height: 21px;
   border-radius: 999px;
   display: grid;
   place-items: center;
   color: var(--brand);
   background: #ffffff;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
 }
 
 .paid-toggle {
@@ -4442,8 +4446,62 @@ h1 {
   gap: 8px;
 }
 
+.simple-order-list.grouped {
+  display: grid;
+  gap: 14px;
+}
+
+.simple-stage-group {
+  display: grid;
+  gap: 8px;
+}
+
+.simple-stage-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px;
+}
+
+.simple-stage-heading div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.simple-stage-heading span {
+  color: #0f172a;
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+.simple-stage-heading strong {
+  min-width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, white);
+  font-size: 0.72rem;
+}
+
+.simple-stage-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.simple-stage-empty {
+  padding: 12px 14px;
+  border-radius: 13px;
+  color: var(--muted);
+  background: #f8fafc;
+  border: 1px dashed rgba(15, 23, 42, 0.1);
+  font-size: 0.86rem;
+}
+
 .simple-order-card {
-  grid-template-columns: minmax(160px, 0.9fr) minmax(180px, 1fr) minmax(170px, 0.9fr) max-content;
+  grid-template-columns: minmax(170px, 0.9fr) minmax(210px, 1fr) minmax(210px, 0.95fr) minmax(210px, auto);
   align-items: center;
   gap: 12px;
   padding: 11px 12px;
@@ -4497,12 +4555,58 @@ h1 {
   text-overflow: ellipsis;
 }
 
+.simple-order-actions .secondary-simple-action {
+  color: #475569;
+  background: #ffffff;
+}
+
 .job-detail.order-drawer .status-buttons {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .job-detail.order-drawer .status-action {
   min-height: 58px;
+}
+
+.detail-next-step {
+  display: grid;
+  gap: 10px;
+}
+
+.detail-next-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 15px;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.075);
+}
+
+.detail-next-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.detail-next-card strong {
+  display: block;
+  margin-top: 2px;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.detail-next-card button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 11px;
+  padding: 8px 14px;
+  color: #ffffff;
+  background: var(--brand);
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 @media (max-width: 980px) {
