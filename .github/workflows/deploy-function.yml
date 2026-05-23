@@ -1,0 +1,44 @@
+name: Deploy Appwrite Function
+
+on:
+  push:
+    branches:
+      - main
+      - claude/wizardly-knuth-eR38O
+    paths:
+      - 'appwrite/functions/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Appwrite CLI
+        run: npm install -g @appwrite.io/cli
+
+      - name: Deploy manage-business-invite
+        working-directory: appwrite/functions/manage-business-invite
+        env:
+          APPWRITE_ENDPOINT: https://syd.cloud.appwrite.io/v1
+          APPWRITE_PROJECT_ID: 6a0ae5450036ec146492
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+        run: |
+          zip -r /tmp/function.zip src package.json package-lock.json
+          curl -sS -X POST \
+            "${APPWRITE_ENDPOINT}/functions/6a0f5ee400325b40b2e9/deployments" \
+            -H "x-appwrite-project: ${APPWRITE_PROJECT_ID}" \
+            -H "x-appwrite-key: ${APPWRITE_API_KEY}" \
+            -F "code=@/tmp/function.zip;type=application/zip" \
+            -F "activate=true" \
+            -F "entrypoint=src/main.js" \
+            | tee /tmp/deploy-result.json
+          cat /tmp/deploy-result.json | python3 -c "
+import sys, json
+r = json.load(sys.stdin)
+if '\$id' in r:
+    print(f'Deployed: {r[\"\$id\"]} status={r.get(\"status\",\"?\")}')
+elif 'message' in r:
+    print(f'Error: {r[\"message\"]}')
+    sys.exit(1)
+"
