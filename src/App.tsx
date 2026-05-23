@@ -3058,7 +3058,7 @@ function SimpleOrderList({
               <span>Updated {lastUpdateLabel(job)}</span>
             </div>
             <div className="simple-order-actions" onClick={(event) => event.stopPropagation()}>
-              {nextStatus && <button className="primary-simple-action" onClick={() => updateJobStatus(job.id, nextStatus)}>{simpleStageAction(nextStatus)}</button>}
+              {nextStatus && <button className="primary-simple-action" onClick={() => updateJobStatus(job.id, nextStatus)}>{stageActionLabel(nextStatus, workflowStages)}</button>}
               <button onClick={() => toggleJobPaid(job.id)}>{job.paid ? 'Mark unpaid' : 'Mark paid'}</button>
             </div>
           </article>
@@ -3811,6 +3811,11 @@ function simpleStageAction(status: JobStatus) {
   return labels[status];
 }
 
+function stageActionLabel(status: JobStatus, workflowStages?: Record<JobStatus, WorkflowStage>) {
+  const configured = workflowStages?.[status]?.verb?.trim();
+  return configured || simpleStageAction(status);
+}
+
 function simpleOrderFilterMatches(job: Job, filter: SimpleOrderFilter) {
   if (filter === 'collected') return job.status === 'collected';
   if (filter === 'in_progress') return job.status === 'in_progress';
@@ -4063,7 +4068,7 @@ function JobDetail({
               {status === 'in_progress' && <Wrench size={18} />}
               {status === 'ready_for_pickup' && <Send size={18} />}
               {status === 'completed' && <Check size={18} />}
-              <span>{simpleStageAction(status)}</span>
+              <span>{stageActionLabel(status, workflowStages)}</span>
             </button>
           ))}
         </div>
