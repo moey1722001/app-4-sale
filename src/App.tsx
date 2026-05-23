@@ -226,269 +226,30 @@ type RosterShift = {
   respondedAt?: string;
 };
 
-const initialBusinesses: Business[] = [
-  {
-    id: 'fresh-fold',
-    name: 'Fresh Fold Laundry',
-    industry: 'Laundromat',
-    location: 'Parramatta',
-    plan: 'Growth',
-    active: true,
-    staff: 8,
-    sms: 1242,
-    jobs: 47,
-    primary: '#4f46e5',
-    accent: '#06b6d4',
-    sender: 'FRESHFOLD',
-    adminEmail: 'owner@freshfold.test',
-    messagingEnabled: false,
-    smsProvider: null,
-    smsSenderName: 'FRESHFOLD',
-    smsSetupStatus: 'not_configured'
-  },
-  {
-    id: 'rapid-auto',
-    name: 'Rapid Auto Care',
-    industry: 'Mechanic',
-    location: 'Blacktown',
-    plan: 'Scale',
-    active: true,
-    staff: 14,
-    sms: 2180,
-    jobs: 33,
-    primary: '#1d4ed8',
-    accent: '#ef4444',
-    sender: 'RAPIDAUTO',
-    adminEmail: 'admin@rapidauto.test',
-    messagingEnabled: true,
-    smsProvider: 'telnyx',
-    smsSenderName: 'RAPIDAUTO',
-    smsSetupStatus: 'connected',
-    maskedKeyPreview: '...8K2Q'
-  },
-  {
-    id: 'stitch-studio',
-    name: 'Stitch Studio',
-    industry: 'Tailoring',
-    location: 'Newtown',
-    plan: 'Starter',
-    active: false,
-    staff: 3,
-    sms: 318,
-    jobs: 12,
-    primary: '#7c3aed',
-    accent: '#14b8a6',
-    sender: 'STITCH',
-    adminEmail: 'hello@stitchstudio.test',
-    messagingEnabled: false,
-    smsProvider: null,
-    smsSenderName: 'STITCH',
-    smsSetupStatus: 'not_configured'
-  },
-  {
-    id: 'paws-and-polish',
-    name: 'Paws & Polish Grooming',
-    industry: 'Pet groomer',
-    location: 'Marrickville',
-    plan: 'Growth',
-    active: true,
-    staff: 6,
-    sms: 864,
-    jobs: 28,
-    primary: '#0f766e',
-    accent: '#f59e0b',
-    sender: 'PAWSPOLISH',
-    adminEmail: 'owner@pawspolish.test',
-    messagingEnabled: true,
-    smsProvider: 'clicksend',
-    smsSenderName: 'PAWSPOLISH',
-    smsSetupStatus: 'connected',
-    maskedKeyPreview: '...P4WS'
-  },
-  {
-    id: 'glow-lane',
-    name: 'Glow Lane Beauty',
-    industry: 'Beauty clinic',
-    location: 'Surry Hills',
-    plan: 'Starter',
-    active: true,
-    staff: 4,
-    sms: 512,
-    jobs: 19,
-    primary: '#be123c',
-    accent: '#f97316',
-    sender: 'GLOWLANE',
-    adminEmail: 'hello@glowlane.test',
-    messagingEnabled: false,
-    smsProvider: null,
-    smsSenderName: 'GLOWLANE',
-    smsSetupStatus: 'not_configured'
-  }
-];
+const platformFallbackBusiness: Business = {
+  id: 'platform-fallback',
+  name: 'No organisation selected',
+  industry: 'Create an organisation',
+  location: 'Verola',
+  plan: 'Starter',
+  active: true,
+  staff: 0,
+  sms: 0,
+  jobs: 0,
+  primary: platformBrand.primary,
+  accent: platformBrand.accent,
+  sender: 'VEROLA',
+  messagingEnabled: false,
+  smsProvider: null,
+  smsSenderName: 'VEROLA',
+  smsSetupStatus: 'not_configured'
+};
 
-const staff: StaffMember[] = [
-  { businessId: 'fresh-fold', name: 'Ava Chen', role: 'Owner', email: 'owner@freshfold.test', phone: '+61 412 200 100', active: true, clockedIn: true, clockInAt: '7:58 AM', hoursToday: 6.2, lastShift: 'Yesterday 8.1h' },
-  { businessId: 'fresh-fold', name: 'Noah Singh', role: 'Manager', email: 'noah@freshfold.test', phone: '+61 419 510 340', active: true, clockedIn: true, clockInAt: '8:16 AM', hoursToday: 5.7, lastShift: 'Yesterday 7.8h' },
-  { businessId: 'fresh-fold', name: 'Mia Taylor', role: 'Staff', email: 'mia@freshfold.test', phone: '+61 421 887 220', active: true, clockedIn: false, hoursToday: 0, lastShift: 'Mon 5.5h' },
-  { businessId: 'fresh-fold', name: 'Leo Park', role: 'Staff', email: 'leo@freshfold.test', phone: '+61 438 881 901', active: false, clockedIn: false, hoursToday: 0, lastShift: 'Fri 4.0h' }
-];
+const initialBusinesses: Business[] = [];
 
-const seedRosterShifts: RosterShift[] = [
-  {
-    id: 'RS-201',
-    businessId: 'fresh-fold',
-    staffName: 'Mia Taylor',
-    role: 'Front counter',
-    date: '2026-05-26',
-    start: '8:00 AM',
-    end: '2:00 PM',
-    area: 'Drop-off desk',
-    response: 'sent'
-  },
-  {
-    id: 'RS-202',
-    businessId: 'fresh-fold',
-    staffName: 'Noah Singh',
-    role: 'Manager',
-    date: '2026-05-26',
-    start: '10:00 AM',
-    end: '6:00 PM',
-    area: 'Operations',
-    response: 'accepted'
-  },
-  {
-    id: 'RS-203',
-    businessId: 'fresh-fold',
-    staffName: 'Mia Taylor',
-    role: 'Pickup counter',
-    date: '2026-05-28',
-    start: '12:00 PM',
-    end: '6:00 PM',
-    area: 'Customer pickup',
-    response: 'accepted'
-  },
-  {
-    id: 'RS-204',
-    businessId: 'fresh-fold',
-    staffName: 'Leo Park',
-    role: 'Floor support',
-    date: '2026-05-29',
-    start: '9:00 AM',
-    end: '1:00 PM',
-    area: 'Sorting',
-    response: 'declined'
-  }
-];
-
-const seedJobs: Job[] = [
-  {
-    id: 'J-1048',
-    customer: 'Sarah McKenzie',
-    phone: '+61 412 444 212',
-    item: '2 bags wash and fold',
-    serviceType: 'Wash and fold',
-    priority: 'Standard',
-    estimate: '$34',
-    notes: 'Use sensitive detergent',
-    status: 'collected',
-    paid: false,
-    due: 'Today 4:30 PM',
-    businessId: 'fresh-fold',
-    updates: [{ status: 'collected', at: '9:08 AM', sms: 'We have received your order.' }]
-  },
-  {
-    id: 'J-1049',
-    customer: 'Mohammed Ali',
-    phone: '+61 421 980 110',
-    item: 'Suit dry clean',
-    serviceType: 'Dry cleaning',
-    priority: 'Urgent',
-    estimate: '$48',
-    notes: 'Pickup before work tomorrow',
-    status: 'in_progress',
-    paid: true,
-    paidAt: '8:45 AM',
-    due: 'Tomorrow 8:00 AM',
-    businessId: 'fresh-fold',
-    updates: [
-      { status: 'collected', at: '8:42 AM', sms: 'We have received your order.' },
-      { status: 'in_progress', at: '10:15 AM', sms: 'Your order is now in progress.' }
-    ]
-  },
-  {
-    id: 'J-1050',
-    customer: 'Olivia Brown',
-    phone: '+61 409 887 331',
-    item: 'King quilt',
-    serviceType: 'Bulky item',
-    priority: 'Standard',
-    estimate: '$55',
-    notes: 'Call on arrival',
-    status: 'ready_for_pickup',
-    paid: false,
-    due: 'Today 2:00 PM',
-    businessId: 'fresh-fold',
-    updates: [
-      { status: 'collected', at: 'Yesterday', sms: 'We have received your order.' },
-      { status: 'ready_for_pickup', at: '11:35 AM', sms: 'Your order is ready for pickup.' }
-    ]
-  },
-  {
-    id: 'J-2051',
-    customer: 'Daniel Harper',
-    phone: '+61 430 118 442',
-    item: 'Toyota Corolla inspection',
-    serviceType: 'Vehicle inspection',
-    priority: 'Standard',
-    estimate: '$189',
-    notes: 'Customer asked for tyre and brake photos before approval.',
-    status: 'in_progress',
-    paid: false,
-    due: 'Today 5:00 PM',
-    businessId: 'rapid-auto',
-    updates: [
-      { status: 'collected', at: '8:10 AM', sms: 'Vehicle checked in.' },
-      { status: 'in_progress', at: '11:20 AM', sms: 'Inspection has started. We will send findings shortly.' }
-    ]
-  },
-  {
-    id: 'J-3052',
-    customer: 'Priya Nair',
-    phone: '+61 411 330 889',
-    item: 'Milo full groom',
-    serviceType: 'Pet grooming',
-    priority: 'Standard',
-    estimate: '$72',
-    notes: 'Milo is nervous around dryers. Use low speed.',
-    status: 'ready_for_pickup',
-    paid: true,
-    paidAt: '1:15 PM',
-    due: 'Today 3:30 PM',
-    businessId: 'paws-and-polish',
-    updates: [
-      { status: 'collected', at: '10:05 AM', sms: 'Milo has arrived safely.' },
-      { status: 'ready_for_pickup', at: '2:40 PM', sms: 'Milo is ready for pickup and looking fresh.' }
-    ]
-  },
-  {
-    id: 'J-4053',
-    customer: 'Emma Wilson',
-    phone: '+61 422 902 144',
-    item: 'Skin consultation reminder',
-    serviceType: 'Appointment reminder',
-    priority: 'Standard',
-    estimate: '$0',
-    notes: 'Send reminder before appointment. Customer prefers SMS.',
-    status: 'completed',
-    paid: true,
-    paidAt: 'Yesterday',
-    due: 'Tomorrow 10:00 AM',
-    businessId: 'glow-lane',
-    updates: [
-      { status: 'completed', at: 'Yesterday', sms: 'Appointment reminder sent for tomorrow at 10:00 AM.' }
-    ]
-  }
-];
+const initialStaffMembers: StaffMember[] = [];
+const initialRosterShifts: RosterShift[] = [];
+const initialJobs: Job[] = [];
 
 const statusFlow: JobStatus[] = ['collected', 'in_progress', 'ready_for_pickup', 'completed'];
 
@@ -531,31 +292,28 @@ const portalPaths: Record<Portal, string> = {
   staff: '/staff'
 };
 
-const inviteStorageKey = 'verola.organisationInvites.v2';
-const businessStorageKey = 'verola.businesses.v2';
-const userStorageKey = 'verola.createdUsers.v2';
-const authStorageKey = 'verola.authUser.v2';
-const activeBusinessStorageKey = 'verola.activeBusinessId.v2';
-const jobsStorageKey = 'verola.jobs.v2';
-const rosterStorageKey = 'verola.rosters.v2';
-const staffStorageKey = 'verola.staff.v1';
+const inviteStorageKey = 'verola.organisationInvites.v5';
+const businessStorageKey = 'verola.businesses.v5';
+const userStorageKey = 'verola.createdUsers.v5';
+const authStorageKey = 'verola.authUser.v5';
+const activeBusinessStorageKey = 'verola.activeBusinessId.v5';
+const jobsStorageKey = 'verola.jobs.v5';
+const rosterStorageKey = 'verola.rosters.v5';
+const staffStorageKey = 'verola.staff.v2';
 const workflowStorageKey = 'verola.workflowStages.v2';
 const smsTemplateStorageKey = 'verola.smsTemplates.v2';
 const masterSmsStorageKey = 'verola.masterSmsSettings.v1';
 const smsLogsStorageKey = 'verola.smsLogs.v1';
 
-const demoUsers: AuthUser[] = [
-  { email: 'moey1722001@gmail.com', name: 'Platform Owner', role: 'super' },
-  { email: 'owner@freshfold.test', name: 'Fresh Fold Admin', role: 'admin', businessId: 'fresh-fold' },
-  { email: 'admin@rapidauto.test', name: 'Rapid Auto Admin', role: 'admin', businessId: 'rapid-auto' },
-  { email: 'mia@freshfold.test', name: 'Mia Taylor', role: 'staff', businessId: 'fresh-fold' }
+const platformUsers: AuthUser[] = [
+  { email: 'moey1722001@gmail.com', name: 'Platform Owner', role: 'super' }
 ];
 
-const demoSuperAdminPasswordHash = '6d7c8cf940fcbb15e4a46bb697fd8560022500ffe874e50117a292f8cbc6a469';
-const demoEmailByRole: Record<UserRole, string> = {
+const platformOwnerPasswordHash = '6d7c8cf940fcbb15e4a46bb697fd8560022500ffe874e50117a292f8cbc6a469';
+const defaultEmailByRole: Record<UserRole, string> = {
   super: 'moey1722001@gmail.com',
-  admin: 'owner@freshfold.test',
-  staff: 'mia@freshfold.test'
+  admin: '',
+  staff: ''
 };
 const productHighlights = [
   'White-label dashboard for laundromats, mechanics, groomers, cleaners, clinics, and repair shops',
@@ -633,7 +391,7 @@ function addDays(date: Date, days: number) {
 }
 
 function formatRelativeDate(value?: string) {
-  if (!value || value.startsWith('Demo') || value.includes('created')) return value || 'Just now';
+  if (!value || value.includes('created')) return value || 'Just now';
   const time = new Date(value).getTime();
   if (Number.isNaN(time)) return value;
   const diff = time - Date.now();
@@ -756,7 +514,22 @@ function organisationPayloadFromBusiness(business: Business) {
 async function fetchPersistedBusinesses() {
   if (!hasAppwriteConfig || !appwriteDatabaseId) return [];
   const response = await databases.listDocuments(appwriteDatabaseId, appwriteOrganisationCollectionId);
-  const businesses = response.documents.map((document) => businessFromOrganisationDocument(document as unknown as OrganisationDocument));
+  const retiredStarterNames = new Set([
+    'Fresh Fold Laundry',
+    'Rapid Auto Care',
+    'Stitch Studio',
+    'Paws & Polish Grooming',
+    'Glow Lane Beauty',
+    'Verola Workspace'
+  ]);
+  const businesses = response.documents
+    .map((document) => businessFromOrganisationDocument(document as unknown as OrganisationDocument))
+    .filter((business) => {
+      const normalizedName = business.name.trim().toLowerCase();
+      return business.id !== 'verola-workspace'
+        && !Array.from(retiredStarterNames).some((name) => name.toLowerCase() === normalizedName)
+        && !normalizedName.includes('verola workspace');
+    });
   debugPersistence('branding fetched after refresh', { count: businesses.length });
   return businesses;
 }
@@ -1112,7 +885,7 @@ function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => readStoredValue<AuthUser | null>(authStorageKey, null));
   const [authReady, setAuthReady] = useState(false);
   const [loginRole, setLoginRole] = useState<UserRole>(() => initialPortal);
-  const [loginEmail, setLoginEmail] = useState(demoEmailByRole[initialPortal]);
+  const [loginEmail, setLoginEmail] = useState(defaultEmailByRole[initialPortal]);
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [currentPath, setCurrentPath] = useState(initialPath);
@@ -1122,16 +895,16 @@ function App() {
   const [inviteLookupPending, setInviteLookupPending] = useState(false);
   const [businesses, setBusinesses] = useState<Business[]>(() => readStoredArray(businessStorageKey, initialBusinesses));
   const [businessesLoading, setBusinessesLoading] = useState(Boolean(hasAppwriteConfig));
-  const [activeBusinessId, setActiveBusinessId] = useState(() => readStoredValue(activeBusinessStorageKey, 'fresh-fold'));
-  const [jobs, setJobs] = useState<Job[]>(() => readStoredArray(jobsStorageKey, seedJobs));
-  const [rosterShifts, setRosterShifts] = useState<RosterShift[]>(() => readStoredArray(rosterStorageKey, seedRosterShifts));
+  const [activeBusinessId, setActiveBusinessId] = useState(() => readStoredValue(activeBusinessStorageKey, ''));
+  const [jobs, setJobs] = useState<Job[]>(() => readStoredArray(jobsStorageKey, initialJobs));
+  const [rosterShifts, setRosterShifts] = useState<RosterShift[]>(() => readStoredArray(rosterStorageKey, initialRosterShifts));
   const [query, setQuery] = useState('');
   const [selectedJobId, setSelectedJobId] = useState<string | undefined>(undefined);
   const [newCustomer, setNewCustomer] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newJobNotes, setNewJobNotes] = useState('');
   const [newJobPaid, setNewJobPaid] = useState(false);
-  const [staffMembers, setStaffMembers] = useState<StaffMember[]>(() => readStoredArray(staffStorageKey, staff));
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>(() => readStoredArray(staffStorageKey, initialStaffMembers));
   const [staffInviteName, setStaffInviteName] = useState('');
   const [staffInviteEmail, setStaffInviteEmail] = useState('');
   const [staffInvitePhone, setStaffInvitePhone] = useState('');
@@ -1143,39 +916,9 @@ function App() {
   const [newBusinessAdminEmail, setNewBusinessAdminEmail] = useState('');
   const [createdUsers, setCreatedUsers] = useState<AuthUser[]>(() => readStoredArray(userStorageKey, []));
   const [setupDraft, setSetupDraft] = useState<SetupDraft>({ name: '', password: '', error: '' });
-  const [organisationInvites, setOrganisationInvites] = useState<OrganisationInvite[]>(() => readStoredArray<OrganisationInvite>(inviteStorageKey, [
-    {
-      id: 'INV-101',
-      token: 'demo-accepted-fresh-fold',
-      businessId: 'fresh-fold',
-      businessName: 'Fresh Fold Laundry',
-      contactName: 'Fresh Fold Owner',
-      adminEmail: 'owner@freshfold.test',
-      phone: '+61 400 000 101',
-      role: 'business_admin',
-      status: 'accepted',
-      sentAt: 'Demo seed',
-      createdAt: '2026-05-01T00:00:00.000Z',
-      expiresAt: '2026-06-01T00:00:00.000Z',
-      acceptedAt: '2026-05-01T00:00:00.000Z'
-    },
-    {
-      id: 'INV-102',
-      token: 'demo-pending-rapid-auto',
-      businessId: 'rapid-auto',
-      businessName: 'Rapid Auto Care',
-      contactName: 'Rapid Auto Admin',
-      adminEmail: 'admin@rapidauto.test',
-      phone: '+61 400 000 102',
-      role: 'business_admin',
-      status: 'pending',
-      sentAt: 'Demo seed',
-      createdAt: '2026-05-01T00:00:00.000Z',
-      expiresAt: '2026-06-01T00:00:00.000Z'
-    }
-  ]).map((invite) => normalizeInvite(invite)));
-  const [rosterStaff, setRosterStaff] = useState(staff[2].name);
-  const [rosterDate, setRosterDate] = useState('2026-05-28');
+  const [organisationInvites, setOrganisationInvites] = useState<OrganisationInvite[]>(() => readStoredArray<OrganisationInvite>(inviteStorageKey, []).map((invite) => normalizeInvite(invite)));
+  const [rosterStaff, setRosterStaff] = useState('');
+  const [rosterDate, setRosterDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [rosterStart, setRosterStart] = useState('9:00 AM');
   const [rosterEnd, setRosterEnd] = useState('5:00 PM');
   const [rosterArea, setRosterArea] = useState('Front counter');
@@ -1197,7 +940,7 @@ function App() {
 
   const lockedBusinessId = authUser?.role === 'admin' || authUser?.role === 'staff' ? authUser.businessId : undefined;
   const resolvedBusinessId = lockedBusinessId ?? activeBusinessId;
-  const activeBusiness = businesses.find((business) => business.id === resolvedBusinessId) ?? businesses[0];
+  const activeBusiness = businesses.find((business) => business.id === resolvedBusinessId) ?? businesses[0] ?? platformFallbackBusiness;
   const visibleJobs = useMemo(
     () =>
       jobs
@@ -1222,7 +965,7 @@ function App() {
       role: 'admin' as UserRole,
       businessId: business.id
     }));
-  const loginUsers = [...demoUsers, ...createdUsers, ...inferredAdminUsers];
+  const loginUsers = [...platformUsers, ...createdUsers, ...inferredAdminUsers];
   const loginUser = loginUsers.find((candidate) => candidate.email === loginEmail.trim().toLowerCase() && candidate.role === loginRole);
   const loginBusinessByEmail = loginRole === 'admin' ? businesses.find((business) => business.adminEmail?.toLowerCase() === loginEmail.trim().toLowerCase()) : undefined;
   const loginBusiness = loginUser?.businessId ? businesses.find((business) => business.id === loginUser.businessId) : loginBusinessByEmail;
@@ -1281,17 +1024,12 @@ function App() {
     );
   }, [portal, activeBusiness.id, authUser, currentStaffMember]);
 
-  function resetDemoData() {
-    [businessStorageKey, inviteStorageKey, userStorageKey, authStorageKey, activeBusinessStorageKey, jobsStorageKey, rosterStorageKey, staffStorageKey, workflowStorageKey, smsTemplateStorageKey, masterSmsStorageKey, smsLogsStorageKey].forEach((key) => localStorage.removeItem(key));
-    window.location.href = '/overview';
-  }
-
   useEffect(() => {
     let cancelled = false;
 
     async function hydrateAuth() {
       const storedUser = readStoredValue<AuthUser | null>(authStorageKey, null);
-      const storedBusinessId = readStoredValue(activeBusinessStorageKey, 'fresh-fold');
+      const storedBusinessId = readStoredValue(activeBusinessStorageKey, '');
 
       if (storedUser) {
         setAuthUser(storedUser);
@@ -1324,7 +1062,7 @@ function App() {
           }
           debugPersistence('Appwrite session restored', { userId: sessionUser.$id, email: sessionUser.email });
         } catch {
-          debugPersistence('No Appwrite session cookie found; keeping remembered demo session if present');
+          debugPersistence('No Appwrite session cookie found; keeping remembered browser session if present');
         }
       }
 
@@ -1590,8 +1328,41 @@ function App() {
 
   async function login() {
     const email = loginEmail.trim().toLowerCase();
+    if (hasAppwriteConfig && email && loginPassword.trim()) {
+      try {
+        await account.createEmailPasswordSession(email, loginPassword);
+        const sessionUser = await account.get();
+        const userWithMeta = sessionUser as typeof sessionUser & { labels?: string[]; prefs?: { role?: UserRole; businessId?: string; name?: string } };
+        const matchedBusiness = businesses.find((business) => business.adminEmail?.toLowerCase() === sessionUser.email.toLowerCase());
+        const matchedStaff = staffMembers.find((member) => member.email?.toLowerCase() === sessionUser.email.toLowerCase());
+        const roleFromMeta = userWithMeta.prefs?.role
+          || (userWithMeta.labels?.includes('super_admin') ? 'super' : userWithMeta.labels?.includes('staff') ? 'staff' : userWithMeta.labels?.includes('business_admin') ? 'admin' : undefined)
+          || (matchedStaff ? 'staff' : matchedBusiness ? 'admin' : undefined);
+        const businessId = userWithMeta.prefs?.businessId || matchedStaff?.businessId || matchedBusiness?.id;
+        if (roleFromMeta === loginRole && (roleFromMeta === 'super' || businessId)) {
+          const appwriteUser: AuthUser = {
+            email: sessionUser.email,
+            name: userWithMeta.prefs?.name || sessionUser.name || sessionUser.email,
+            role: roleFromMeta,
+            businessId
+          };
+          setAuthUser(appwriteUser);
+          setLoginError('');
+          setLoginPassword('');
+          setPortal(appwriteUser.role);
+          if (appwriteUser.businessId) setActiveBusinessId(appwriteUser.businessId);
+          window.history.replaceState({}, '', portalPaths[appwriteUser.role]);
+          setCurrentPath(portalPaths[appwriteUser.role]);
+          debugPersistence('Appwrite session login succeeded', { email: appwriteUser.email, role: appwriteUser.role, businessId: appwriteUser.businessId });
+          return;
+        }
+      } catch (error) {
+        debugPersistence('Appwrite password login did not complete; falling back to assigned local account check', error instanceof Error ? error.message : error);
+      }
+    }
+
     const user = loginUsers.find((candidate) => candidate.email === email && candidate.role === loginRole);
-    const passwordOk = user?.role === 'super' ? await passwordDigest(loginPassword) === demoSuperAdminPasswordHash : Boolean(loginPassword.trim());
+    const passwordOk = user?.role === 'super' ? await passwordDigest(loginPassword) === platformOwnerPasswordHash : Boolean(loginPassword.trim());
     const organisationAvailable = !user?.businessId || businesses.some((business) => business.id === user.businessId && business.active);
     const staffAccessAllowed = user?.role !== 'staff'
       || staffMembers.some((member) =>
@@ -1615,11 +1386,16 @@ function App() {
   }
 
   function logout() {
+    if (hasAppwriteConfig) {
+      account.deleteSession('current').catch((error) => {
+        debugPersistence('Appwrite logout skipped', error instanceof Error ? error.message : error);
+      });
+    }
     setAuthUser(null);
     writeStoredValue(authStorageKey, null);
     setPortal('admin');
     setLoginRole('admin');
-    setLoginEmail(demoEmailByRole.admin);
+    setLoginEmail(defaultEmailByRole.admin);
     setLoginPassword('');
     window.history.replaceState({}, '', '/login');
     setCurrentPath('/login');
@@ -2137,12 +1913,12 @@ function App() {
         id: `sms-${Date.now()}`,
         businessId: activeBusiness.id,
         businessName: activeBusiness.name,
-        recipient: '+61 demo',
+        recipient: 'test recipient',
         templateKey: 'test',
         status: connected ? 'sent' : 'failed',
         timestamp: 'Just now',
         provider: masterSmsSettings.provider,
-        response: connected ? 'Demo test SMS queued through master provider.' : 'Master SMS provider is not configured.'
+        response: connected ? 'Test SMS queued through master provider.' : 'Master SMS provider is not configured.'
       },
       ...logs
     ]);
@@ -2470,7 +2246,7 @@ function App() {
           <div className="topbar-actions">
             <span className={hasAppwriteConfig ? 'config-pill ready' : 'config-pill'}>
               <LockKeyhole size={15} />
-              {hasAppwriteConfig ? 'Appwrite connected' : 'Demo mode'}
+              {hasAppwriteConfig ? 'Appwrite connected' : 'Local mode'}
             </span>
             <button className="icon-button" aria-label="Notifications" aria-expanded={showNotifications} onClick={() => setShowNotifications((open) => !open)}>
               <Bell size={19} />
@@ -2527,7 +2303,6 @@ function App() {
             disconnectMasterSmsProvider={disconnectMasterSmsProvider}
             smsLogs={smsLogs}
             smsNotice={smsNotice}
-            resetDemoData={resetDemoData}
           />
         )}
 
@@ -2649,8 +2424,7 @@ function SuperAdminView({
   testMasterSmsProvider,
   disconnectMasterSmsProvider,
   smsLogs,
-  smsNotice,
-  resetDemoData
+  smsNotice
 }: {
   businesses: Business[];
   businessesLoading: boolean;
@@ -2688,7 +2462,6 @@ function SuperAdminView({
   disconnectMasterSmsProvider: () => void;
   smsLogs: SmsLog[];
   smsNotice: string;
-  resetDemoData: () => void;
 }) {
   const activeTenants = tenants.filter((tenant) => tenant.active).length;
   const pendingBusinessInvites = organisationInvites.filter((invite) => invite.role === 'business_admin' && inviteStatus(invite) === 'pending');
@@ -2862,12 +2635,11 @@ function SuperAdminView({
         </details>
 
         <details className="panel admin-drawer">
-          <summary><Activity size={18} /> Maintenance <span>Demo tools</span></summary>
+          <summary><Activity size={18} /> Platform health <span>Ready</span></summary>
           <div className="activity-list">
             <div><strong>Tenant isolation</strong><span>Business data stays scoped by organisation.</span></div>
             <div><strong>Branding</strong><span>Logo and colours load from selected organisation context.</span></div>
           </div>
-          <button className="secondary-action full-width" onClick={resetDemoData}>Reset demo data</button>
         </details>
       </section>
     </div>
@@ -2918,7 +2690,7 @@ function LoginView({
                 className={role === key ? 'active' : ''}
                 onClick={() => {
                   setRole(key);
-                  setEmail(demoEmailByRole[key]);
+                  setEmail(defaultEmailByRole[key]);
                 }}
               >
                 <Icon size={17} />
@@ -2937,10 +2709,9 @@ function LoginView({
         </div>
         {error && <p className="login-error">{error}</p>}
         <div className="login-help">
-          <strong>Demo credentials -- any password works</strong>
+          <strong>Use your assigned Verola account</strong>
           <span>Super Admin: moey1722001@gmail.com</span>
-          <span>Business Admin: owner@freshfold.test</span>
-          <span>Staff: mia@freshfold.test</span>
+          <span>Business admins and staff sign in after accepting an invite.</span>
         </div>
         <a className="login-link" href="/overview">View product overview</a>
       </section>
@@ -2960,12 +2731,12 @@ function ProductOverviewView() {
           </div>
         </div>
         <div>
-          <span className="eyebrow">Client-ready SaaS demo</span>
+          <span className="eyebrow">Service business operating system</span>
           <h1>Track every customer job and keep people updated automatically.</h1>
           <p>Verola gives small service businesses a branded portal for drop-offs, job progress, staff handover, rosters, payments, and customer SMS updates.</p>
         </div>
         <div className="overview-actions">
-          <a className="primary-action" href="/login">Open demo login</a>
+          <a className="primary-action" href="/login">Open login</a>
           <a className="secondary-action" href="/super-admin">Super Admin portal</a>
         </div>
       </section>
@@ -2977,7 +2748,7 @@ function ProductOverviewView() {
           </article>
         ))}
       </section>
-      <section className="overview-demo-strip">
+      <section className="overview-industry-strip">
         <div><strong>Laundromat</strong><span>Order ready for pickup</span></div>
         <div><strong>Mechanic</strong><span>Vehicle inspection update</span></div>
         <div><strong>Pet groomer</strong><span>Pickup notification</span></div>
@@ -4315,7 +4086,7 @@ function MasterSmsSettingsPanel({
       </div>
 
       {notice && <p className="messaging-notice">{notice}</p>}
-      <p className="security-note">Raw SMS API keys are cleared immediately in this demo UI. In production, save them only through an Appwrite Function or server route backed by encrypted environment/secret storage.</p>
+      <p className="security-note">Raw SMS API keys are cleared immediately in the browser. Save live provider secrets only through a secure Appwrite Function or server route backed by encrypted secret storage.</p>
     </div>
   );
 }
@@ -4458,7 +4229,7 @@ function stageActionCopy(status: JobStatus) {
 }
 
 function renderTemplatePreview(template: string) {
-  return template.replace(/\{\{customer\}\}/g, 'Sarah').replace(/\{\{business\}\}/g, 'Fresh Fold Laundry');
+  return template.replace(/\{\{customer\}\}/g, 'Customer').replace(/\{\{business\}\}/g, 'Your Business');
 }
 
 function nowLabel() {
@@ -4519,8 +4290,8 @@ function nextJobStatus(status: JobStatus) {
 function assignedStaffForJob(job: Job, staff: StaffMember[]) {
   const activeStaff = staff.filter((member) => member.active);
   if (!activeStaff.length) return 'Unassigned';
-  const seed = job.id.split('').reduce((total, char) => total + char.charCodeAt(0), 0);
-  return activeStaff[seed % activeStaff.length].name;
+  const staffIndex = job.id.split('').reduce((total, char) => total + char.charCodeAt(0), 0);
+  return activeStaff[staffIndex % activeStaff.length].name;
 }
 
 function lastUpdateLabel(job: Job) {

@@ -475,7 +475,7 @@ h1 {
 }
 
 .overview-grid,
-.overview-demo-strip {
+.overview-industry-strip {
   width: min(1120px, 100%);
   margin: 0 auto;
   display: grid;
@@ -487,7 +487,7 @@ h1 {
 }
 
 .overview-card,
-.overview-demo-strip div {
+.overview-industry-strip div {
   padding: 16px;
   border-radius: 16px;
   background: white;
@@ -504,12 +504,12 @@ h1 {
 }
 
 .overview-card p,
-.overview-demo-strip span {
+.overview-industry-strip span {
   color: var(--muted);
   line-height: 1.45;
 }
 
-.overview-demo-strip {
+.overview-industry-strip {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
@@ -3253,7 +3253,7 @@ h1 {
   .provider-options,
   .story-steps,
   .overview-grid,
-  .overview-demo-strip,
+  .overview-industry-strip,
   .roster-form,
   .workflow-editor-row,
   .workbench,

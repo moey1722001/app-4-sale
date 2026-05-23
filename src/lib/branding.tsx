@@ -19,7 +19,7 @@ export const platformBrand: OrganisationBrand = {
   tagline: 'Run your business. Grow every day.',
   logoUrl: '/verola-logo.png',
   appIconUrl: '/verola-icon-512.png',
-  faviconUrl: '/favicon.png',
+  faviconUrl: '/favicon.svg',
   lightLogoUrl: '/verola-logo.png',
   darkLogoUrl: '/verola-logo.png',
   emailHeaderLogoUrl: '/verola-logo.png',

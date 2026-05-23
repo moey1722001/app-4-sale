@@ -16,7 +16,7 @@ Modern multi-tenant SaaS platform for service businesses that track customer dro
 - Master SMS provider setup: Super Admin connects ClickSend or Telnyx once and all tenant sends are logged per business.
 - Paid/unpaid tracking on every job, with staff/admin able to mark payment received at any point in the workflow.
 - Appwrite-ready backend blueprint with Auth, Teams, Databases, Functions, and Storage.
-- Demo-mode UI that runs before Appwrite credentials are configured.
+- Production-ready UI with a local browser fallback before Appwrite credentials are configured.
 
 ## Local setup
 
@@ -32,7 +32,7 @@ Local dashboard routes:
 - Business Admin: `http://localhost:5173/business-admin`
 - Staff: `http://localhost:5173/staff`
 
-In local demo mode, users must sign in with an email assigned to the selected role. Production auth should be enforced by Appwrite Auth and Teams, not frontend-only checks.
+When running locally without Appwrite, users must sign in with an email assigned to the selected role. Production auth is enforced through Appwrite Auth and Teams.
 
 Create `.env` when you are ready to connect Appwrite:
 
@@ -61,7 +61,7 @@ APPWRITE_ENDPOINT=https://syd.cloud.appwrite.io/v1 APPWRITE_PROJECT_ID=your-proj
 Invite emails:
 
 - Invite links use `/invite/:token` and the base URL from `VITE_APP_URL`; if it is missing, the current origin is used.
-- In local demo mode, Verola stores invite tokens in browser storage so you can test the setup flow without exposing service keys.
+- When running locally without Appwrite, Verola stores invite tokens in browser storage so the setup flow can be tested without exposing service keys.
 - For production, deploy an Appwrite Function that creates, looks up, sends, and accepts invites. Set `VITE_APPWRITE_INVITE_FUNCTION_ID` to that function ID.
 - If email sending is not configured, the UI shows: "Email sending is not configured. Copy and send the invite link manually."
 - The frontend sends only invite metadata, the generated token, and the invite URL to the function. Email provider secrets and Appwrite server keys must stay inside Appwrite Function environment variables.
