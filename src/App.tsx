@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardList,
+  Clock3,
   CreditCard,
   History,
   LockKeyhole,
@@ -2869,34 +2870,19 @@ function BusinessAdminView(props: {
 
       <section className="admin-support-grid">
         <details className="panel admin-drawer">
+          <summary><Settings size={18} /> Workflow stages <span>4 automated stages</span></summary>
+          <WorkflowStageEditor stages={props.workflowStages} setStage={props.setWorkflowStage} />
+        </details>
+
+        <details className="panel admin-drawer">
+          <summary><MessageSquareText size={18} /> Messaging <span>{props.masterSmsSettings.status === 'connected' ? 'SMS active' : 'SMS unavailable'}</span></summary>
+          <BusinessSmsStatus settings={props.masterSmsSettings} notice={props.smsNotice} sendTestSms={props.sendTestSms} logs={props.smsLogs} />
+          <SmsTemplateEditor templates={props.smsTemplates} setTemplate={props.setSmsTemplate} workflowStages={props.workflowStages} />
+        </details>
+
+        <details className="panel admin-drawer">
           <summary><Users size={18} /> Staff and shifts <span>{props.staff.length} users</span></summary>
-          <div className="admin-staff-grid">
-            <div className="staff-list">
-              {props.staff.map((member) => (
-                <div className="staff-row" key={member.phone}>
-                  <div>
-                    <strong>{member.name}</strong>
-                    <span>{member.role} · {member.phone}</span>
-                  </div>
-                  <span className={member.active ? 'status-dot active' : 'status-dot paused'}>{member.active ? 'Active' : 'Paused'}</span>
-                </div>
-              ))}
-            </div>
-            <div className="shift-list">
-              {props.staff.map((member) => (
-                <div className="shift-row" key={member.phone}>
-                  <div>
-                    <strong>{member.name}</strong>
-                    <span>{member.clockedIn ? `Clocked in ${member.clockInAt}` : `Last shift ${member.lastShift}`}</span>
-                  </div>
-                  <div className="shift-hours">
-                    <strong>{member.hoursToday.toFixed(1)}h</strong>
-                    <span className={member.clockedIn ? 'status-dot active' : 'status-dot paused'}>{member.clockedIn ? 'On shift' : 'Off shift'}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <StaffShiftOverview staff={props.staff} />
         </details>
       </section>
     </div>
@@ -3662,39 +3648,79 @@ function MasterSmsSettingsPanel({
   );
 }
 
+function StaffShiftOverview({ staff }: { staff: StaffMember[] }) {
+  const groups = [
+    { key: 'on', label: 'On shift', staff: staff.filter((member) => member.active && member.clockedIn) },
+    { key: 'off', label: 'Off shift', staff: staff.filter((member) => member.active && !member.clockedIn) },
+    { key: 'paused', label: 'Paused', staff: staff.filter((member) => !member.active) }
+  ];
+
+  return (
+    <div className="staff-shift-overview">
+      {groups.map((group) => (
+        <div className="staff-shift-group" key={group.key}>
+          <div className="section-mini-heading">
+            <strong>{group.label}</strong>
+            <span>{group.staff.length}</span>
+          </div>
+          <div className="staff-table">
+            {group.staff.length ? group.staff.map((member) => (
+              <div className="staff-table-row" key={member.phone}>
+                <div className="staff-avatar">{member.name.split(' ').map((word) => word[0]).join('').slice(0, 2)}</div>
+                <div>
+                  <strong>{member.name}</strong>
+                  <span>{member.role} · {member.phone}</span>
+                </div>
+                <div className="staff-hours">
+                  <strong>{member.hoursToday.toFixed(1)}h</strong>
+                  <span>{member.clockedIn ? `Since ${member.clockInAt}` : `Last ${member.lastShift}`}</span>
+                </div>
+                <span className={`staff-state-pill ${member.clockedIn ? 'active' : member.active ? 'off' : 'paused'}`}>
+                  {member.clockedIn ? 'On shift' : member.active ? 'Off shift' : 'Paused'}
+                </span>
+              </div>
+            )) : (
+              <div className="staff-empty-row">No staff in this group.</div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function BusinessSmsStatus({ settings, notice, sendTestSms, logs }: { settings: MasterSmsSettings; notice: string; sendTestSms: () => void; logs: SmsLog[] }) {
   const connected = settings.status === 'connected';
   const lastSent = logs[0];
   return (
     <div className="business-messaging">
-      <div className={connected ? 'sms-health active' : 'sms-health offline'}>
-        <span />
-        <div>
-          <strong>{connected ? 'SMS active' : 'SMS unavailable'}</strong>
-          <small>{connected ? 'Workflow buttons can send customer updates.' : 'Statuses still work. Copy previews until SMS is enabled.'}</small>
+      <div className="sms-status-grid">
+        <div className={connected ? 'sms-status-card active' : 'sms-status-card offline'}>
+          <span className="sms-status-light" />
+          <div>
+            <small>SMS Status</small>
+            <strong>{connected ? 'Messaging enabled' : 'Messaging unavailable'}</strong>
+            <p>{connected ? 'Status changes notify customers automatically.' : 'Orders still update. Ask Super Admin to connect SMS.'}</p>
+          </div>
+        </div>
+        <div className="sms-status-card">
+          <MessageSquareText size={20} />
+          <div>
+            <small>Connected Provider</small>
+            <strong>{connected ? providerName(settings.provider) : 'Not configured'}</strong>
+            <p>{connected ? `Sender: ${settings.senderName || 'Verola'}` : 'No provider keys are visible here.'}</p>
+          </div>
+        </div>
+        <div className="sms-status-card">
+          <Clock3 size={20} />
+          <div>
+            <small>Last Sent</small>
+            <strong>{lastSent ? `${lastSent.status} · ${lastSent.timestamp}` : 'No SMS yet'}</strong>
+            <p>{lastSent ? `${lastSent.recipient} · ${lastSent.templateKey}` : 'Customer updates will appear after status changes.'}</p>
+          </div>
         </div>
       </div>
-
-      <div className="sms-preview-mini">
-        <span className="eyebrow">SMS preview</span>
-        <p>Update a job status to preview the message before it goes to the customer.</p>
-        <button onClick={sendTestSms}>{connected ? 'Send test update' : 'Check SMS status'}</button>
-      </div>
-
-      <div className="last-sms-card">
-        <span className="eyebrow">Last sent</span>
-        {lastSent ? (
-          <div className="last-sms-row">
-            <MessageSquareText size={18} />
-            <div>
-              <strong>{lastSent.recipient}</strong>
-              <small>{lastSent.templateKey} · {lastSent.timestamp} · {lastSent.status}</small>
-            </div>
-          </div>
-        ) : (
-          <p>No customer SMS has been sent yet.</p>
-        )}
-      </div>
+      <button className="sms-test-button" onClick={sendTestSms}>{connected ? 'Send test update' : 'Check SMS status'}</button>
       {notice && <p className="messaging-notice compact">{notice}</p>}
     </div>
   );
@@ -3743,6 +3769,20 @@ function providerName(provider: SmsProvider | null) {
   if (provider === 'clicksend') return 'ClickSend';
   if (provider === 'telnyx') return 'Telnyx';
   return 'No provider';
+}
+
+function stageActionCopy(status: JobStatus) {
+  const copy: Record<JobStatus, string> = {
+    collected: 'Order added to the active queue.',
+    in_progress: 'Staff have started processing the job.',
+    ready_for_pickup: 'Customer can collect the completed order.',
+    completed: 'Order leaves active jobs and moves to history.'
+  };
+  return copy[status];
+}
+
+function renderTemplatePreview(template: string) {
+  return template.replace(/\{\{customer\}\}/g, 'Sarah').replace(/\{\{business\}\}/g, 'Fresh Fold Laundry');
 }
 
 function nowLabel() {
@@ -3867,15 +3907,30 @@ function SmsTemplateEditor({
   workflowStages: Record<JobStatus, WorkflowStage>;
 }) {
   return (
-    <div className="template-list editable">
+    <div className="template-workspace">
+      <div className="section-mini-heading">
+        <strong>Templates</strong>
+        <span>Auto-sent by stage</span>
+      </div>
       {statusFlow.map((status) => (
-        <label className="template-item" key={status}>
-          <div className="template-heading">
-            <strong>{workflowStages[status].label}</strong>
-            <span>{'{{customer}}'} {'{{business}}'}</span>
+        <details className="template-accordion" key={status}>
+          <summary>
+            <div>
+              <strong>{workflowStages[status].label}</strong>
+              <span>{stageActionCopy(status)}</span>
+            </div>
+            <small>{templates[status].length} chars</small>
+          </summary>
+          <label>
+            <span>Message template</span>
+            <textarea value={templates[status]} onChange={(event) => setTemplate(status, event.target.value)} rows={3} />
+          </label>
+          <div className="template-preview">
+            <small>Live preview</small>
+            <p>{renderTemplatePreview(templates[status])}</p>
           </div>
-          <textarea value={templates[status]} onChange={(event) => setTemplate(status, event.target.value)} rows={3} />
-        </label>
+          <p className="template-hint">{'Use {{customer}} and {{business}} to personalise this SMS.'}</p>
+        </details>
       ))}
     </div>
   );
@@ -3889,13 +3944,31 @@ function WorkflowStageEditor({
   setStage: (status: JobStatus, patch: Partial<WorkflowStage>) => void;
 }) {
   return (
-    <div className="workflow-editor">
+    <div className="workflow-stage-board">
       {statusFlow.map((status, index) => (
-        <div className="workflow-editor-row" key={status}>
-          <span>{index + 1}</span>
-          <input value={stages[status].label} onChange={(event) => setStage(status, { label: event.target.value })} placeholder="Stage name" />
-          <input value={stages[status].verb} onChange={(event) => setStage(status, { verb: event.target.value })} placeholder="Button label" />
-          <input value={stages[status].nextStep} onChange={(event) => setStage(status, { nextStep: event.target.value })} placeholder="Next step hint" />
+        <div className="workflow-stage-card" key={status}>
+          <div className="workflow-stage-top">
+            <div className="stage-number">{index + 1}</div>
+            <div>
+              <span className="eyebrow">Stage {index + 1}</span>
+              <h3>{stages[status].label}</h3>
+              <input value={stages[status].label} onChange={(event) => setStage(status, { label: event.target.value })} placeholder="Stage name" aria-label={`${status} stage name`} />
+            </div>
+            <span className="sms-auto-pill">SMS auto</span>
+          </div>
+          <div className="stage-detail-grid">
+            <label>
+              <span>Customer sees</span>
+              <strong>{stages[status].verb}</strong>
+              <input value={stages[status].verb} onChange={(event) => setStage(status, { verb: event.target.value })} placeholder="Customer label" />
+            </label>
+            <label>
+              <span>What happens</span>
+              <strong>{stages[status].nextStep || stageActionCopy(status)}</strong>
+              <input value={stages[status].nextStep} onChange={(event) => setStage(status, { nextStep: event.target.value })} placeholder={stageActionCopy(status)} />
+            </label>
+          </div>
+          <p>{stageActionCopy(status)}</p>
         </div>
       ))}
     </div>
@@ -3978,8 +4051,13 @@ function JobDetail({
           <span>Automatically notifies customer via SMS</span>
         </div>
         <div className="status-buttons">
-          {statusFlow.filter((status) => status !== job.status).map((status) => (
-            <button key={status} className="status-action" onClick={() => updateJobStatus(job.id, status)}>
+          {statusFlow.map((status) => (
+            <button
+              key={status}
+              className={`status-action ${job.status === status ? 'current' : ''}`}
+              disabled={job.status === status}
+              onClick={() => updateJobStatus(job.id, status)}
+            >
               {status === 'collected' && <Shirt size={18} />}
               {status === 'in_progress' && <Wrench size={18} />}
               {status === 'ready_for_pickup' && <Send size={18} />}
