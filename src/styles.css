@@ -832,6 +832,17 @@ h1 {
   gap: 12px;
 }
 
+.workflow-editor-note {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .workflow-stage-card {
   padding: 16px;
   border-radius: 18px;

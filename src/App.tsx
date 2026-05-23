@@ -872,11 +872,11 @@ function inviteFromUrl(tokenOrId: string): OrganisationInvite | undefined {
 
 function getAppBaseUrl() {
   const configured = appBaseUrl && !appBaseUrl.includes('your-vercel-domain.com') ? appBaseUrl : '';
-  if (typeof window === 'undefined') return configured || 'https://app-4-sale.vercel.app';
+  if (typeof window === 'undefined') return configured || 'https://verolaa.vercel.app';
   const origin = window.location.origin;
   const hostname = new URL(origin).hostname;
   if (hostname === 'localhost' || hostname === '127.0.0.1') return origin;
-  return configured || origin || 'https://app-4-sale.vercel.app';
+  return configured || origin || 'https://verolaa.vercel.app';
 }
 
 function buildInviteUrl(invite: OrganisationInvite) {
@@ -2871,6 +2871,7 @@ function BusinessAdminView(props: {
       <section className="admin-support-grid">
         <details className="panel admin-drawer">
           <summary><Settings size={18} /> Workflow stages <span>4 automated stages</span></summary>
+          <p className="workflow-editor-note">These stages control the internal order flow. Customer text is controlled separately in Messaging templates.</p>
           <WorkflowStageEditor stages={props.workflowStages} setStage={props.setWorkflowStage} />
         </details>
 
@@ -3954,21 +3955,21 @@ function WorkflowStageEditor({
               <h3>{stages[status].label}</h3>
               <input value={stages[status].label} onChange={(event) => setStage(status, { label: event.target.value })} placeholder="Stage name" aria-label={`${status} stage name`} />
             </div>
-            <span className="sms-auto-pill">SMS auto</span>
+            <span className="sms-auto-pill">Uses template</span>
           </div>
           <div className="stage-detail-grid">
             <label>
-              <span>Customer sees</span>
+              <span>Staff button</span>
               <strong>{stages[status].verb}</strong>
-              <input value={stages[status].verb} onChange={(event) => setStage(status, { verb: event.target.value })} placeholder="Customer label" />
+              <input value={stages[status].verb} onChange={(event) => setStage(status, { verb: event.target.value })} placeholder="Button label" />
             </label>
             <label>
-              <span>What happens</span>
+              <span>Internal meaning</span>
               <strong>{stages[status].nextStep || stageActionCopy(status)}</strong>
               <input value={stages[status].nextStep} onChange={(event) => setStage(status, { nextStep: event.target.value })} placeholder={stageActionCopy(status)} />
             </label>
           </div>
-          <p>{stageActionCopy(status)}</p>
+          <p>{stageActionCopy(status)} SMS wording comes from the matching Messaging template.</p>
         </div>
       ))}
     </div>
