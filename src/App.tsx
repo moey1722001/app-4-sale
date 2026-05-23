@@ -2691,190 +2691,184 @@ function SuperAdminView({
   resetDemoData: () => void;
 }) {
   const activeTenants = tenants.filter((tenant) => tenant.active).length;
+  const pendingBusinessInvites = organisationInvites.filter((invite) => invite.role === 'business_admin' && inviteStatus(invite) === 'pending');
+  const activeBusinessInvites = organisationInvites.filter((invite) => invite.role === 'business_admin' && invite.businessId === activeBusiness.id);
   const totalSmsSent = smsLogs.filter((log) => log.status === 'sent').length;
 
   return (
-    <div className="view-grid super-admin-view">
-      <section className="metric-grid super-metrics">
-        <Metric icon={Building2} label="Organisations" value={tenants.length.toString()} detail={`${activeTenants} enabled`} />
-        <Metric icon={MessageSquareText} label="Master SMS" value={masterSmsSettings.status === 'connected' ? 'Live' : 'Off'} detail={masterSmsSettings.status === 'connected' ? providerName(masterSmsSettings.provider) : 'Configure once'} />
-        <Metric icon={CreditCard} label="MRR" value="$7.4k" detail="Subscriptions healthy" />
-        <Metric icon={Activity} label="SMS logs" value={totalSmsSent.toString()} detail="Platform sent events" />
+    <div className="super-console">
+      <section className="super-hero panel">
+        <div>
+          <span className="eyebrow">Verola Control Centre</span>
+          <h2>Manage tenant setup without the noise.</h2>
+          <p>Create organisations, upload branding, send setup invites, and keep platform messaging healthy from one clean workspace.</p>
+        </div>
+        <div className="super-health-grid">
+          <div><strong>{tenants.length}</strong><span>Businesses</span></div>
+          <div><strong>{pendingBusinessInvites.length}</strong><span>Pending invites</span></div>
+          <div><strong>{masterSmsSettings.status === 'connected' ? 'Live' : 'Off'}</strong><span>SMS</span></div>
+          <div><strong>{totalSmsSent}</strong><span>Sent SMS</span></div>
+        </div>
       </section>
 
-      <section className="panel wide super-business-panel">
-        <PanelHeader icon={Building2} title="Businesses" action={businessesLoading ? 'Syncing Appwrite' : 'Create, brand, invite'} />
-        <div className="business-create-form">
-          <input value={newBusinessName} onChange={(event) => setNewBusinessName(event.target.value)} placeholder="Business name" />
-          <input value={newBusinessContactName} onChange={(event) => setNewBusinessContactName(event.target.value)} placeholder="Contact name" />
-          <input value={newBusinessIndustry} onChange={(event) => setNewBusinessIndustry(event.target.value)} placeholder="Industry" />
-          <input value={newBusinessLocation} onChange={(event) => setNewBusinessLocation(event.target.value)} placeholder="Location" />
-          <input value={newBusinessPhone} onChange={(event) => setNewBusinessPhone(event.target.value)} placeholder="Phone" />
-          <input value={newBusinessAdminEmail} onChange={(event) => setNewBusinessAdminEmail(event.target.value)} placeholder="Admin email invite" type="email" />
-          <button onClick={addBusiness} disabled={!newBusinessName.trim() || !newBusinessAdminEmail.trim()}>
-            <Plus size={17} />
-            Send invite
-          </button>
-        </div>
-        <div className="tenant-list premium-tenant-list">
-          {tenants.map((tenant) => (
-            <div
-              key={tenant.id}
-              className={`tenant-row ${activeBusinessId === tenant.id ? 'selected' : ''}`}
-              role="button"
-              tabIndex={0}
-              onClick={() => onBusinessChange(tenant.id)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') onBusinessChange(tenant.id);
-              }}
-            >
-              <BusinessLogo business={tenant} className="tenant-row-logo" />
-              <div className="tenant-row-main">
-                <strong>{tenant.name}</strong>
-                <span>{tenant.industry} · {tenant.location}</span>
-                <small>{tenant.adminEmail || 'Admin invite not sent'}</small>
-              </div>
-              <div className="tenant-actions">
-                <div className="tenant-meta">
-                  <span>{tenant.plan}</span>
-                  <span className={tenant.active ? 'status-dot active' : 'status-dot paused'}>
-                    {tenant.active ? 'Enabled' : 'Disabled'}
-                  </span>
-                </div>
-                <details className="tenant-menu" onClick={(event) => event.stopPropagation()}>
-                  <summary aria-label={`Actions for ${tenant.name}`}>•••</summary>
-                  <button
-                    disabled={tenants.length <= 1}
-                    onClick={() => deleteBusiness(tenant.id)}
+      <section className="super-main-grid">
+        <div className="super-main-column">
+          <section className="panel super-business-panel">
+            <PanelHeader icon={Building2} title="Businesses" action={businessesLoading ? 'Syncing' : `${activeTenants} active`} />
+            <div className="business-create-form super-create-compact">
+              <input value={newBusinessName} onChange={(event) => setNewBusinessName(event.target.value)} placeholder="Business name" />
+              <input value={newBusinessContactName} onChange={(event) => setNewBusinessContactName(event.target.value)} placeholder="Contact name" />
+              <input value={newBusinessAdminEmail} onChange={(event) => setNewBusinessAdminEmail(event.target.value)} placeholder="Admin email" type="email" />
+              <input value={newBusinessIndustry} onChange={(event) => setNewBusinessIndustry(event.target.value)} placeholder="Industry" />
+              <input value={newBusinessLocation} onChange={(event) => setNewBusinessLocation(event.target.value)} placeholder="Location" />
+              <input value={newBusinessPhone} onChange={(event) => setNewBusinessPhone(event.target.value)} placeholder="Phone" />
+              <button onClick={addBusiness} disabled={!newBusinessName.trim() || !newBusinessAdminEmail.trim()}>
+                <Send size={17} />
+                Create & send setup invite
+              </button>
+            </div>
+            {inviteNotice && <div className="inline-notice">{inviteNotice}</div>}
+
+            <div className="tenant-list premium-tenant-list super-tenant-list">
+              {tenants.map((tenant) => {
+                const pendingInvite = organisationInvites.find((invite) => invite.role === 'business_admin' && invite.businessId === tenant.id && inviteStatus(invite) === 'pending');
+                return (
+                  <div
+                    key={tenant.id}
+                    className={`tenant-row ${activeBusinessId === tenant.id ? 'selected' : ''}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onBusinessChange(tenant.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') onBusinessChange(tenant.id);
+                    }}
                   >
-                    Delete business
-                  </button>
-                </details>
-              </div>
-              <ChevronRight size={18} />
+                    <BusinessLogo business={tenant} className="tenant-row-logo" />
+                    <div className="tenant-row-main">
+                      <strong>{tenant.name}</strong>
+                      <span>{tenant.industry} · {tenant.location}</span>
+                      <small>{tenant.adminEmail || 'No admin email yet'}</small>
+                    </div>
+                    <div className="tenant-actions">
+                      <div className="tenant-meta">
+                        <span className={tenant.active ? 'status-dot active' : 'status-dot paused'}>{tenant.active ? 'Active' : 'Disabled'}</span>
+                        {pendingInvite && <span className="status-dot pending">Invite pending</span>}
+                      </div>
+                      <details className="tenant-menu" onClick={(event) => event.stopPropagation()}>
+                        <summary aria-label={`Actions for ${tenant.name}`}>•••</summary>
+                        {pendingInvite && (
+                          <button onClick={() => sendInviteEmail(pendingInvite.id)} disabled={inviteSendingId === pendingInvite.id}>
+                            {inviteSendingId === pendingInvite.id ? 'Sending...' : 'Resend invite'}
+                          </button>
+                        )}
+                        {pendingInvite && <button onClick={() => copyInviteLink(pendingInvite.id)}>{copiedInviteId === pendingInvite.id ? 'Copied' : 'Copy invite'}</button>}
+                        <button disabled={tenants.length <= 1} onClick={() => deleteBusiness(tenant.id)}>Delete business</button>
+                      </details>
+                    </div>
+                    <ChevronRight size={18} />
+                  </div>
+                );
+              })}
             </div>
-          ))}
+          </section>
         </div>
-      </section>
 
-      <section className="panel super-invite-panel">
-        <PanelHeader icon={Mail} title="Company Invites" action={`${organisationInvites.filter((invite) => invite.role === 'business_admin' && inviteStatus(invite) === 'pending').length} pending`} />
-        {inviteNotice && <div className="inline-notice">{inviteNotice}</div>}
-        <div className="invite-list">
-          {organisationInvites.filter((invite) => invite.role === 'business_admin').map((invite) => (
-            <div className="invite-row" key={invite.id}>
+        <aside className="super-side-column">
+          <section className="panel selected-business-card" style={{ '--brand': activeBusiness.primary, '--accent': activeBusiness.accent } as React.CSSProperties}>
+            <div className="selected-business-top">
+              <BusinessLogo business={activeBusiness} className="preview-logo" />
               <div>
-                <strong>{invite.businessName}</strong>
-                <span>{invite.contactName} · {invite.adminEmail}</span>
-                <span>Expires {formatRelativeDate(invite.expiresAt)}</span>
-              </div>
-              <div className="invite-actions">
-                <span className={inviteStatus(invite) === 'accepted' ? 'status-dot active' : inviteStatus(invite) === 'expired' ? 'status-dot paused' : 'status-dot pending'}>{inviteStatus(invite)}</span>
-                {appwriteInviteFunctionId ? (
-                  <button onClick={() => sendInviteEmail(invite.id)} disabled={inviteSendingId === invite.id || inviteStatus(invite) !== 'pending'}>
-                    {inviteSendingId === invite.id ? 'Sending' : invite.sentAt.includes('sent') ? 'Resend email' : 'Send email'}
-                  </button>
-                ) : (
-                  <a className="secondary-action compact-action" href={inviteMailtoHref(invite)}>
-                    Open email
-                  </a>
-                )}
-                <a className="secondary-action compact-action" href={buildInviteUrl(invite)} target="_blank" rel="noreferrer">Preview</a>
-                <button onClick={() => copyInviteLink(invite.id)}>{copiedInviteId === invite.id ? 'Copied' : 'Copy invite'}</button>
+                <span className="eyebrow">Selected business</span>
+                <h2>{activeBusiness.name}</h2>
+                <p>{activeBusiness.industry} · {activeBusiness.location}</p>
               </div>
             </div>
-          ))}
-        </div>
+            <div className="selected-business-actions">
+              <label className="logo-upload">
+                <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" onChange={(event) => uploadBusinessLogo(activeBusiness.id, event.target.files?.[0])} />
+                <Paintbrush size={17} />
+                {activeBusiness.logoUrl ? 'Replace logo' : 'Upload logo'}
+              </label>
+              <button className="secondary-action" onClick={() => removeBusinessLogo(activeBusiness.id)} disabled={!activeBusiness.logoUrl}>
+                <X size={16} />
+                Remove
+              </button>
+            </div>
+            <div className="brand-colour-controls compact">
+              <label>
+                <span>Brand</span>
+                <input type="color" value={activeBusiness.primary} onChange={(event) => updateBusinessBrand(activeBusiness.id, { primary: event.target.value })} />
+              </label>
+              <label>
+                <span>Accent</span>
+                <input type="color" value={activeBusiness.accent} onChange={(event) => updateBusinessBrand(activeBusiness.id, { accent: event.target.value })} />
+              </label>
+            </div>
+            <div className="super-mini-preview">
+              <div>
+                <strong>{activeBusiness.name}</strong>
+                <span>Branded portal preview</span>
+              </div>
+              <button>Primary action</button>
+            </div>
+          </section>
+
+          <section className="panel selected-invite-card">
+            <PanelHeader icon={Mail} title="Setup invite" action={`${activeBusinessInvites.length || 0} links`} />
+            {activeBusinessInvites.length ? activeBusinessInvites.slice(0, 2).map((invite) => (
+              <div className="invite-row compact" key={invite.id}>
+                <div>
+                  <strong>{invite.contactName}</strong>
+                  <span>{invite.adminEmail}</span>
+                  <span>Expires {formatRelativeDate(invite.expiresAt)}</span>
+                </div>
+                <div className="invite-actions">
+                  <span className={inviteStatus(invite) === 'accepted' ? 'status-dot active' : inviteStatus(invite) === 'expired' ? 'status-dot paused' : 'status-dot pending'}>{inviteStatus(invite)}</span>
+                  <button onClick={() => sendInviteEmail(invite.id)} disabled={inviteSendingId === invite.id || inviteStatus(invite) !== 'pending'}>
+                    {inviteSendingId === invite.id ? 'Sending' : 'Email'}
+                  </button>
+                  <a className="secondary-action compact-action" href={buildInviteUrl(invite)} target="_blank" rel="noreferrer">Preview</a>
+                  <button onClick={() => copyInviteLink(invite.id)}>{copiedInviteId === invite.id ? 'Copied' : 'Copy'}</button>
+                </div>
+              </div>
+            )) : (
+              <div className="simple-empty-orders compact">
+                <Mail size={20} />
+                <strong>No setup invite yet</strong>
+                <span>Add an admin email when creating this business.</span>
+              </div>
+            )}
+          </section>
+        </aside>
       </section>
 
-      <section className="panel spotlight-panel">
-        <PanelHeader icon={Paintbrush} title="Business Branding" action="One logo powers the portal" />
-        <p className="panel-intro">Upload the main business logo once. Verola reuses it for login, setup links, dashboards, customer tracking, email headers, and app icons where supported.</p>
-        <div className="branding-preview" style={{ '--brand': activeBusiness.primary, '--accent': activeBusiness.accent } as React.CSSProperties}>
-          <BusinessLogo business={activeBusiness} className="preview-logo" />
-          <div>
-            <span className="eyebrow">Login preview</span>
-            <strong>{activeBusiness.name}</strong>
-            <p>{activeBusiness.industry} dashboard · Powered by Verola</p>
+      <section className="super-advanced-grid">
+        <details className="panel admin-drawer">
+          <summary><ShieldCheck size={18} /> Platform SMS <span>{masterSmsSettings.status === 'connected' ? providerName(masterSmsSettings.provider) : 'Not configured'}</span></summary>
+          <MasterSmsSettingsPanel
+            settings={masterSmsSettings}
+            draft={masterSmsDraft}
+            updateDraft={updateMasterSmsDraft}
+            saveProvider={saveMasterSmsProvider}
+            testProvider={testMasterSmsProvider}
+            disconnectProvider={disconnectMasterSmsProvider}
+            notice={smsNotice}
+          />
+        </details>
+
+        <details className="panel admin-drawer">
+          <summary><MessageSquareText size={18} /> Usage logs <span>{smsLogs.length} events</span></summary>
+          <SmsUsageLog logs={smsLogs} />
+        </details>
+
+        <details className="panel admin-drawer">
+          <summary><Activity size={18} /> Maintenance <span>Demo tools</span></summary>
+          <div className="activity-list">
+            <div><strong>Tenant isolation</strong><span>Business data stays scoped by organisation.</span></div>
+            <div><strong>Branding</strong><span>Logo and colours load from selected organisation context.</span></div>
           </div>
-          <button>Primary action</button>
-        </div>
-        <div className="branding-header-preview" style={{ '--brand': activeBusiness.primary, '--accent': activeBusiness.accent } as React.CSSProperties}>
-          <div>
-            <span className="eyebrow">Dashboard header preview</span>
-            <strong>{activeBusiness.name}</strong>
-            <p>{activeBusiness.industry} · {activeBusiness.location}</p>
-          </div>
-          <ShieldCheck size={24} />
-        </div>
-        <div className="brand-command">
-          <BusinessLogo business={activeBusiness} className="super-logo" />
-          <div>
-            <strong>{activeBusiness.name}</strong>
-            <p>{activeBusiness.logoName ? `Main logo: ${activeBusiness.logoName}` : 'No custom logo yet. Platform fallback is active.'}</p>
-          </div>
-        </div>
-        <div className="brand-actions">
-          <label className="logo-upload">
-            <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" onChange={(event) => uploadBusinessLogo(activeBusiness.id, event.target.files?.[0])} />
-            <Paintbrush size={17} />
-            {activeBusiness.logoUrl ? 'Replace logo' : 'Upload logo'}
-          </label>
-          <button className="secondary-action" onClick={() => removeBusinessLogo(activeBusiness.id)} disabled={!activeBusiness.logoUrl}>
-            <X size={16} />
-            Remove logo
-          </button>
-        </div>
-        <div className="brand-colour-controls">
-          <label>
-            <span>Optional brand colour</span>
-            <input type="color" value={activeBusiness.primary} onChange={(event) => updateBusinessBrand(activeBusiness.id, { primary: event.target.value })} />
-          </label>
-          <label>
-            <span>Accent colour</span>
-            <input type="color" value={activeBusiness.accent} onChange={(event) => updateBusinessBrand(activeBusiness.id, { accent: event.target.value })} />
-          </label>
-        </div>
-        <div className="brand-surface-list">
-          {['Login', 'Invite setup', 'Dashboard', 'Mobile header', 'Customer status', 'Email header', 'App icon', 'Favicon'].map((surface) => (
-            <span key={surface}><Check size={14} />{surface}</span>
-          ))}
-        </div>
-        <div className="settings-stack">
-          <Setting label="Main logo" value={activeBusiness.logoUrl ? 'Used across tenant experience' : 'Platform fallback logo'} />
-          <Setting label="Optional overrides" value="App icon, favicon, dark/light logo, email header" />
-          <Setting label="Current brand colour" value={activeBusiness.primary || 'Platform default'} />
-          <Setting label="Tenant isolation" value="Branding loads from organisation context" />
-        </div>
-      </section>
-
-      <section className="panel master-sms-panel">
-        <PanelHeader icon={ShieldCheck} title="Platform SMS Settings" action={masterSmsSettings.status === 'connected' ? 'Master provider live' : 'Action needed'} />
-        <MasterSmsSettingsPanel
-          settings={masterSmsSettings}
-          draft={masterSmsDraft}
-          updateDraft={updateMasterSmsDraft}
-          saveProvider={saveMasterSmsProvider}
-          testProvider={testMasterSmsProvider}
-          disconnectProvider={disconnectMasterSmsProvider}
-          notice={smsNotice}
-        />
-      </section>
-
-      <section className="panel">
-        <PanelHeader icon={MessageSquareText} title="SMS Usage Logs" action={`${smsLogs.length} events`} />
-        <SmsUsageLog logs={smsLogs} />
-      </section>
-
-      <section className="panel">
-        <PanelHeader icon={Activity} title="Demo Activity" action="Last updated just now" />
-        <div className="activity-list">
-          <div><strong>Fresh Fold Laundry</strong><span>3 jobs moving through pickup workflow</span></div>
-          <div><strong>Rapid Auto Care</strong><span>Inspection update ready to preview</span></div>
-          <div><strong>Paws & Polish</strong><span>Customer pickup notification sent</span></div>
-          <div><strong>Demo reset</strong><span>Restore sample data before a client meeting</span></div>
-        </div>
-        <button className="secondary-action full-width" onClick={resetDemoData}>Reset demo data</button>
+          <button className="secondary-action full-width" onClick={resetDemoData}>Reset demo data</button>
+        </details>
       </section>
     </div>
   );
