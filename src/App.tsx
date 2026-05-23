@@ -48,6 +48,7 @@ type Portal = 'super' | 'admin' | 'staff';
 type UserRole = Portal;
 type JobStatus = 'collected' | 'in_progress' | 'ready_for_pickup' | 'completed';
 type OrderFilter = 'all' | 'collected' | 'in_progress' | 'ready_for_pickup' | 'completed';
+type SimpleOrderFilter = 'all' | 'collected' | 'in_progress' | 'ready_for_pickup';
 type BusinessJobsView = 'active' | 'completed' | 'history';
 type SmsProvider = 'clicksend' | 'telnyx';
 type SmsSetupStatus = 'not_configured' | 'connected' | 'failed';
@@ -137,7 +138,6 @@ type Job = {
   businessId: string;
   updates: Array<{ status?: JobStatus; at: string; sms: string; kind?: 'status' | 'note' | 'payment' | 'sms' | 'sms_failed' }>;
 };
-
 
 type MasterSmsSettings = {
   provider: SmsProvider;
@@ -870,13 +870,12 @@ function inviteFromUrl(tokenOrId: string): OrganisationInvite | undefined {
 }
 
 function getAppBaseUrl() {
-  if (typeof window === 'undefined') return 'https://verolaa.vercel.app';
+  const configured = appBaseUrl && !appBaseUrl.includes('your-vercel-domain.com') ? appBaseUrl : '';
+  if (typeof window === 'undefined') return configured || 'https://app-4-sale.vercel.app';
   const origin = window.location.origin;
   const hostname = new URL(origin).hostname;
-  // On Vercel preview deployments, always use the stable production URL
-  if (hostname.startsWith('verolaa-') && hostname.endsWith('.vercel.app')) return 'https://verolaa.vercel.app';
-  const configured = appBaseUrl && !appBaseUrl.includes('your-verola-domain.com') ? appBaseUrl : '';
-  return origin || configured || 'https://verolaa.vercel.app';
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return origin;
+  return configured || origin || 'https://app-4-sale.vercel.app';
 }
 
 function buildInviteUrl(invite: OrganisationInvite) {
@@ -957,6 +956,7 @@ function App() {
   const [copiedInviteId, setCopiedInviteId] = useState('');
   const [inviteSendingId, setInviteSendingId] = useState('');
   const [inviteNotice, setInviteNotice] = useState('');
+  const [inviteLookupPending, setInviteLookupPending] = useState(false);
   const [businesses, setBusinesses] = useState<Business[]>(() => readStoredArray(businessStorageKey, initialBusinesses));
   const [businessesLoading, setBusinessesLoading] = useState(Boolean(hasAppwriteConfig));
   const [activeBusinessId, setActiveBusinessId] = useState(() => readStoredValue(activeBusinessStorageKey, 'fresh-fold'));
@@ -1254,6 +1254,7 @@ function App() {
     const action = isInviteId ? 'lookup_invite_by_id' : 'lookup_invite';
     const body = isInviteId ? { action, inviteId: activeInviteToken } : { action, token: activeInviteToken };
 
+    setInviteLookupPending(true);
     debugInvite('invite lookup requested', { token: activeInviteToken, action });
     functions.createExecution(
       appwriteInviteFunctionId,
@@ -1272,7 +1273,10 @@ function App() {
           debugInvite('invite lookup failure', { token: activeInviteToken });
         }
       })
-      .catch(() => debugInvite('invite lookup failure', { token: activeInviteToken }));
+      .catch(() => debugInvite('invite lookup failure', { token: activeInviteToken }))
+      .finally(() => {
+        if (!cancelled) setInviteLookupPending(false);
+      });
 
     return () => {
       cancelled = true;
@@ -1377,6 +1381,7 @@ function App() {
             inviteUrl: url,
             subject,
             messageBody: body,
+            createdAt: invite.createdAt,
             expiresAt: invite.expiresAt,
             logoUrl: businesses.find((business) => business.id === invite.businessId)?.logoUrl
           }),
@@ -1781,7 +1786,7 @@ function App() {
               status,
               at: actionTime,
               kind: smsConnected ? 'sms' : 'sms_failed',
-              sms: smsConnected ? `Customer SMS sent: ${message}` : 'SMS unavailable. Status updated, but no customer message was sent.'
+              sms: smsConnected ? `Customer SMS sent: ${message}` : 'SMS failed. Status updated, but no customer message was sent.'
             },
             ...job.updates
           ]
@@ -1804,11 +1809,25 @@ function App() {
         },
         ...logs
       ]);
-      setSmsNotice(status === 'completed' ? 'Order completed and archived.' : `Customer notified: ${targetJob.customer}.`);
-      showWorkflowToast(status === 'completed' ? 'Order completed -- moved to Today\'s Completed' : `SMS sent · ${targetJob.customer} notified`);
+      setSmsNotice(status === 'completed' ? 'Order completed and saved.' : `Customer notified: ${targetJob.customer}.`);
+      showWorkflowToast(status === 'completed' ? 'Order completed and saved' : 'Customer notified');
     } else {
-      setSmsNotice(status === 'completed' ? 'Order completed. SMS unavailable.' : 'Status updated. SMS unavailable -- contact the platform admin.');
-      showWorkflowToast(status === 'completed' ? 'Order completed' : 'Status updated -- SMS unavailable', status === 'completed' ? 'success' : 'warning');
+      setSmsLogs((logs) => [
+        {
+          id: `sms-${Date.now()}`,
+          businessId: activeBusiness.id,
+          businessName: activeBusiness.name,
+          recipient: targetJob.phone,
+          templateKey: status,
+          status: 'failed',
+          timestamp: actionTime,
+          provider: masterSmsSettings.provider,
+          response: 'SMS failed. Status was updated without a customer message.'
+        },
+        ...logs
+      ]);
+      setSmsNotice(status === 'completed' ? 'Order completed and saved. SMS failed.' : 'SMS failed. Status updated, but no customer message was sent.');
+      showWorkflowToast(status === 'completed' ? 'Order completed and saved' : 'SMS failed', status === 'completed' ? 'success' : 'warning');
     }
   }
 
@@ -1952,6 +1971,7 @@ function App() {
       <BrandProvider brand={brandFromBusiness(inviteBusiness)}>
         <InviteAcceptView
           invite={activeInvite}
+          lookupPending={inviteLookupPending}
           setupDraft={setupDraft}
           setSetupDraft={setSetupDraft}
           completeInviteSetup={completeInviteSetup}
@@ -2551,11 +2571,13 @@ function ProductOverviewView() {
 
 function InviteAcceptView({
   invite,
+  lookupPending,
   setupDraft,
   setSetupDraft,
   completeInviteSetup
 }: {
   invite?: OrganisationInvite;
+  lookupPending: boolean;
   setupDraft: SetupDraft;
   setSetupDraft: (draft: SetupDraft | ((current: SetupDraft) => SetupDraft)) => void;
   completeInviteSetup: (token: string) => void;
@@ -2592,7 +2614,15 @@ function InviteAcceptView({
           </div>
         </div>
 
-        {invite && status === 'pending' ? (
+        {lookupPending && !invite ? (
+          <>
+            <div>
+              <span className="eyebrow">Checking invite</span>
+              <h1>Loading setup link</h1>
+              <p className="login-copy">We’re verifying this Verola invite and preparing the business setup page.</p>
+            </div>
+          </>
+        ) : invite && status === 'pending' ? (
           <>
             <div>
               <span className="eyebrow">You've been invited</span>
@@ -2745,12 +2775,12 @@ function BusinessAdminView(props: {
   setNewJobPaid: (value: boolean) => void;
   addJob: () => void;
 }) {
-  const readyJobs = props.jobs.filter((job) => job.status === 'ready_for_pickup').length;
   const pendingRosterReplies = props.rosterShifts.filter((shift) => shift.response === 'sent').length;
-  const [orderFilter, setOrderFilter] = useState<OrderFilter>('all');
+  const [orderFilter, setOrderFilter] = useState<SimpleOrderFilter>('all');
   const [jobsView, setJobsView] = useState<BusinessJobsView>('active');
   const activeJobs = props.jobs.filter((job) => job.status !== 'completed');
   const completedJobs = props.jobs.filter((job) => job.status === 'completed');
+  const readyJobs = activeJobs.filter((job) => job.status === 'ready_for_pickup').length;
   const operationalJobs = useMemo(
     () => activeJobs.filter((job) => simpleOrderFilterMatches(job, orderFilter)),
     [activeJobs, orderFilter]
@@ -2838,17 +2868,6 @@ function BusinessAdminView(props: {
       </section>
 
       <section className="admin-support-grid">
-        <details className="panel admin-drawer">
-          <summary><MessageSquareText size={18} /> Messaging <span>{props.masterSmsSettings.status === 'connected' ? 'Enabled' : 'Unavailable'}</span></summary>
-          <BusinessSmsStatus settings={props.masterSmsSettings} notice={props.smsNotice} sendTestSms={props.sendTestSms} logs={props.smsLogs} />
-          <SmsTemplateEditor templates={props.smsTemplates} setTemplate={props.setSmsTemplate} workflowStages={props.workflowStages} />
-        </details>
-
-        <details className="panel admin-drawer">
-          <summary><Settings size={18} /> Workflow stages <span>Custom labels</span></summary>
-          <WorkflowStageEditor stages={props.workflowStages} setStage={props.setWorkflowStage} />
-        </details>
-
         <details className="panel admin-drawer">
           <summary><Users size={18} /> Staff and shifts <span>{props.staff.length} users</span></summary>
           <div className="admin-staff-grid">
@@ -2983,11 +3002,11 @@ function SimpleOrderTabs({
   workflowStages
 }: {
   jobs: Job[];
-  activeFilter: OrderFilter;
-  setFilter: (filter: OrderFilter) => void;
+  activeFilter: SimpleOrderFilter;
+  setFilter: (filter: SimpleOrderFilter) => void;
   workflowStages: Record<JobStatus, WorkflowStage>;
 }) {
-  const tabs: Array<{ key: OrderFilter; label: string; count: number }> = [
+  const tabs: Array<{ key: SimpleOrderFilter; label: string; count: number }> = [
     { key: 'all', label: 'All', count: jobs.length },
     { key: 'collected', label: simpleStageLabel('collected', workflowStages), count: jobs.filter((job) => job.status === 'collected').length },
     { key: 'in_progress', label: simpleStageLabel('in_progress', workflowStages), count: jobs.filter((job) => job.status === 'in_progress').length },
@@ -3751,11 +3770,10 @@ function simpleStageAction(status: JobStatus) {
   return labels[status];
 }
 
-function simpleOrderFilterMatches(job: Job, filter: OrderFilter) {
+function simpleOrderFilterMatches(job: Job, filter: SimpleOrderFilter) {
   if (filter === 'collected') return job.status === 'collected';
   if (filter === 'in_progress') return job.status === 'in_progress';
   if (filter === 'ready_for_pickup') return job.status === 'ready_for_pickup';
-  if (filter === 'completed') return job.status === 'completed';
   return true;
 }
 
@@ -3805,7 +3823,7 @@ function latestNotification(job: Job): JobNotification {
   if (failed) {
     return {
       state: 'failed',
-      label: 'SMS unavailable',
+      label: 'SMS failed',
       time: failed.at,
       message: failed.sms
     };
@@ -3838,7 +3856,6 @@ function latestNotification(job: Job): JobNotification {
     message: 'Update a status to prepare a customer message.'
   };
 }
-
 
 function SmsTemplateEditor({
   templates,
@@ -3954,15 +3971,15 @@ function JobDetail({
         <button onClick={() => toggleJobPaid(job.id)}>{job.paid ? 'Mark unpaid' : 'Mark paid'}</button>
       </div>
 
-      {updateJobStatus ? (
+      {updateJobStatus && job.status !== 'completed' ? (
         <>
         <div className="detail-section-title">
           <strong>Update status</strong>
           <span>Automatically notifies customer via SMS</span>
         </div>
         <div className="status-buttons">
-          {statusFlow.map((status) => (
-            <button key={status} className={`status-action ${job.status === status ? 'current' : ''}`} onClick={() => updateJobStatus(job.id, status)}>
+          {statusFlow.filter((status) => status !== job.status).map((status) => (
+            <button key={status} className="status-action" onClick={() => updateJobStatus(job.id, status)}>
               {status === 'collected' && <Shirt size={18} />}
               {status === 'in_progress' && <Wrench size={18} />}
               {status === 'ready_for_pickup' && <Send size={18} />}

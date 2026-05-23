@@ -181,12 +181,13 @@ export default async ({ req, res, log, error }) => {
           appwriteUserId = user.$id;
           emailConfigured = true;
 
-          // Embed all invite details in callback URL so the accept page can reconstruct
-          // the invite from query params if the DB lookup fails.
-          // Appwrite appends &userId=&secret= to this URL automatically.
+          // Prefer the frontend-generated invite URL because it already includes
+          // the raw token and business details needed for a no-DB fallback.
+          // Appwrite appends userId/secret to this URL automatically.
           const baseUrl = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
           const inviteId = payload.inviteId || '';
           const inviteParams = new URLSearchParams({
+            token: payload.token || '',
             businessId: payload.businessId || '',
             business: payload.businessName || '',
             email: payload.adminEmail || '',
@@ -195,11 +196,15 @@ export default async ({ req, res, log, error }) => {
             expires: payload.expiresAt || '',
             inviteId,
           });
+          if (payload.createdAt) inviteParams.set('created', payload.createdAt);
           if (payload.phone) inviteParams.set('phone', payload.phone);
           const callbackBase = inviteId
             ? `${baseUrl}/accept-invite/${encodeURIComponent(inviteId)}`
             : `${baseUrl}/accept-invite`;
-          const callbackUrl = `${callbackBase}?${inviteParams.toString()}`;
+          const generatedCallbackUrl = `${callbackBase}?${inviteParams.toString()}`;
+          const callbackUrl = typeof payload.inviteUrl === 'string' && payload.inviteUrl.startsWith('http')
+            ? payload.inviteUrl
+            : generatedCallbackUrl;
 
           // Send via Appwrite's built-in email system (template customised in Console)
           await services.account.createMagicURLToken(user.$id, payload.adminEmail, callbackUrl);
