@@ -1210,7 +1210,7 @@ function App() {
     [activeBusiness.id, rosterShifts]
   );
   const activeStaffMembers = useMemo(
-    () => staffMembers.filter((member) => !member.businessId || member.businessId === activeBusiness.id),
+    () => staffMembers.filter((member) => member.active && (!member.businessId || member.businessId === activeBusiness.id)),
     [activeBusiness.id, staffMembers]
   );
   const selectedJob = visibleJobs.find((job) => job.id === selectedJobId);
@@ -1245,6 +1245,19 @@ function App() {
   const customerTrackJobId = currentPath.match(/^\/track\/([^/]+)/)?.[1] ? decodeURIComponent(currentPath.match(/^\/track\/([^/]+)/)?.[1] ?? '') : '';
   const customerTrackJob = customerTrackJobId ? jobs.find((job) => job.id === customerTrackJobId) : undefined;
   const customerTrackBusiness = customerTrackJob ? businesses.find((business) => business.id === customerTrackJob.businessId) : undefined;
+
+  const staffInviteIsResolved = (invite: OrganisationInvite) =>
+    invite.role === 'staff'
+    && (
+      invite.status === 'accepted'
+      || createdUsers.some((user) => user.role === 'staff' && user.businessId === invite.businessId && user.email.toLowerCase() === invite.adminEmail.toLowerCase())
+      || staffMembers.some((member) =>
+        member.businessId === invite.businessId
+        && member.active
+        && member.email?.toLowerCase() === invite.adminEmail.toLowerCase()
+        && (member.lastShift !== 'Invite pending' || member.clockedIn || member.clockInAt)
+      )
+    );
 
   useEffect(() => {
     appwriteClient.ping().then(() => {
@@ -1389,17 +1402,21 @@ function App() {
   useEffect(() => {
     const invitedStaff = organisationInvites
       .filter((invite) => invite.role === 'staff' && invite.businessId === activeBusiness.id)
-      .map((invite) => ({
-        businessId: invite.businessId,
-        name: invite.contactName || invite.adminEmail.split('@')[0],
-        role: 'Staff' as const,
-        email: invite.adminEmail,
-        phone: invite.phone || invite.adminEmail,
-        active: inviteStatus(invite) !== 'expired',
-        clockedIn: false,
-        hoursToday: 0,
-        lastShift: invite.status === 'accepted' ? 'Account active' : 'Invite pending'
-      }));
+      .map((invite) => {
+        const hasAcceptedAccount = invite.status === 'accepted'
+          || createdUsers.some((user) => user.role === 'staff' && user.businessId === invite.businessId && user.email.toLowerCase() === invite.adminEmail.toLowerCase());
+        return {
+          businessId: invite.businessId,
+          name: invite.contactName || invite.adminEmail.split('@')[0],
+          role: 'Staff' as const,
+          email: invite.adminEmail,
+          phone: invite.phone || invite.adminEmail,
+          active: inviteStatus(invite) !== 'expired',
+          clockedIn: false,
+          hoursToday: 0,
+          lastShift: hasAcceptedAccount ? 'Account active' : 'Invite pending'
+        };
+      });
 
     if (!invitedStaff.length) return;
 
@@ -1418,7 +1435,7 @@ function App() {
       });
       return changed ? next : current;
     });
-  }, [activeBusiness.id, organisationInvites]);
+  }, [activeBusiness.id, createdUsers, organisationInvites]);
 
   useEffect(() => {
     if (!hasAppwriteConfig || !appwriteDatabaseId || !activeBusiness?.id) return;
@@ -1476,6 +1493,20 @@ function App() {
       setRosterStaff(activeStaffMembers[0].name);
     }
   }, [activeStaffMembers, rosterStaff]);
+
+  useEffect(() => {
+    if (authUser?.role !== 'staff') return;
+    const stillAllowed = activeStaffMembers.some((member) => member.active && staffIdentityMatches(member, authUser));
+    if (!stillAllowed) {
+      setAuthUser(null);
+      setPortal('admin');
+      setLoginRole('staff');
+      setLoginEmail(authUser.email);
+      setLoginError('Your staff access has been removed. Contact your business admin.');
+      window.history.replaceState({}, '', '/login');
+      setCurrentPath('/login');
+    }
+  }, [authUser, activeStaffMembers]);
 
   function showWorkflowToast(message: string, tone: WorkflowToast['tone'] = 'success') {
     setWorkflowToast({ id: Date.now(), tone, message });
@@ -1562,8 +1593,14 @@ function App() {
     const user = loginUsers.find((candidate) => candidate.email === email && candidate.role === loginRole);
     const passwordOk = user?.role === 'super' ? await passwordDigest(loginPassword) === demoSuperAdminPasswordHash : Boolean(loginPassword.trim());
     const organisationAvailable = !user?.businessId || businesses.some((business) => business.id === user.businessId && business.active);
+    const staffAccessAllowed = user?.role !== 'staff'
+      || staffMembers.some((member) =>
+        member.businessId === user.businessId
+        && member.active
+        && staffIdentityMatches(member, user)
+      );
 
-    if (!user || !passwordOk || !organisationAvailable) {
+    if (!user || !passwordOk || !organisationAvailable || !staffAccessAllowed) {
       setLoginError('Check the email, password, and role. This account is not assigned to that dashboard.');
       return;
     }
@@ -1890,6 +1927,59 @@ function App() {
     debugInvite('staff invite token created', { token: invite.token, businessId: invite.businessId, email: invite.adminEmail, expiresAt: invite.expiresAt });
     debugInvite('staff invite URL generated', { token: invite.token, url: buildInviteUrl(invite) });
     await sendInviteEmailForInvite(invite);
+  }
+
+  function removeStaffMember(member: StaffMember) {
+    const memberId = staffUserIdFor(member);
+    setStaffMembers((current) =>
+      current.filter((item) =>
+        !(
+          item.businessId === activeBusiness.id
+          && (
+            staffUserIdFor(item) === memberId
+            || (member.email && item.email?.toLowerCase() === member.email.toLowerCase())
+            || item.name.toLowerCase() === member.name.toLowerCase()
+          )
+        )
+      )
+    );
+    setCreatedUsers((current) =>
+      current.filter((user) =>
+        !(
+          user.role === 'staff'
+          && user.businessId === activeBusiness.id
+          && (
+            user.email.toLowerCase() === member.email?.toLowerCase()
+            || user.name.toLowerCase() === member.name.toLowerCase()
+          )
+        )
+      )
+    );
+    setOrganisationInvites((current) =>
+      current.map((invite) =>
+        invite.role === 'staff'
+        && invite.businessId === activeBusiness.id
+        && (
+          invite.adminEmail.toLowerCase() === member.email?.toLowerCase()
+          || invite.contactName.toLowerCase() === member.name.toLowerCase()
+        )
+          ? { ...invite, status: 'expired', sentAt: 'Access removed' }
+          : invite
+      )
+    );
+    setRosterShifts((current) =>
+      current.filter((shift) =>
+        !(
+          shift.businessId === activeBusiness.id
+          && (
+            shift.staffUserId === memberId
+            || shift.staffName.toLowerCase() === member.name.toLowerCase()
+          )
+        )
+      )
+    );
+    setSmsNotice(`${member.name} was removed from ${activeBusiness.name}.`);
+    showRosterToast(`${member.name} access removed`, 'warning');
   }
 
   async function deleteBusiness(businessId: string) {
@@ -2490,7 +2580,8 @@ function App() {
             staffInvitePhone={staffInvitePhone}
             setStaffInvitePhone={setStaffInvitePhone}
             inviteStaffMember={inviteStaffMember}
-            staffInvites={organisationInvites.filter((invite) => invite.businessId === activeBusiness.id && invite.role === 'staff')}
+            staffInvites={organisationInvites.filter((invite) => invite.businessId === activeBusiness.id && invite.role === 'staff' && !staffInviteIsResolved(invite))}
+            removeStaffMember={removeStaffMember}
             copiedInviteId={copiedInviteId}
             inviteSendingId={inviteSendingId}
             inviteNotice={inviteNotice}
@@ -3117,6 +3208,7 @@ function BusinessAdminView(props: {
   setStaffInvitePhone: (value: string) => void;
   inviteStaffMember: () => void;
   staffInvites: OrganisationInvite[];
+  removeStaffMember: (member: StaffMember) => void;
   copiedInviteId: string;
   inviteSendingId: string;
   inviteNotice: string;
@@ -3250,7 +3342,7 @@ function BusinessAdminView(props: {
             copyInviteLink={props.copyInviteLink}
             sendInviteEmail={props.sendInviteEmail}
           />
-          <StaffShiftOverview staff={props.staff} />
+          <StaffShiftOverview staff={props.staff} removeStaffMember={props.removeStaffMember} />
         </details>
       </section>
     </div>
@@ -3304,9 +3396,9 @@ function StaffInvitePanel({
         </button>
       </div>
       {inviteNotice && <div className="inline-notice compact">{inviteNotice}</div>}
-      {invites.length > 0 && (
+      {pendingInvites.length > 0 && (
         <div className="staff-invite-list">
-          {invites.slice(0, 4).map((invite) => (
+          {pendingInvites.slice(0, 4).map((invite) => (
             <div className="staff-invite-row" key={invite.id}>
               <div>
                 <strong>{invite.contactName}</strong>
@@ -3341,6 +3433,11 @@ function StaffView(props: {
   updateRosterResponse: (shiftId: string, response: ShiftResponse) => void;
   toggleClock: () => void;
 }) {
+  const activeJobs = props.jobs.filter((job) => job.status !== 'completed');
+  const staffSelectedJob = props.selectedJob && props.selectedJob.status !== 'completed'
+    ? props.selectedJob
+    : activeJobs[0];
+
   return (
     <div className="staff-layout">
       <section className="shift-hero">
@@ -3356,9 +3453,18 @@ function StaffView(props: {
       </section>
       <section className="panel wide">
         <JobsHeader query={props.query} setQuery={props.setQuery} />
-        <div className="workflow-layout staff-workbench">
-          <WorkflowBoard jobs={props.jobs} selectedJobId={props.selectedJob?.id} setSelectedJobId={props.setSelectedJobId} workflowStages={props.workflowStages} compact />
-          <JobDetail job={props.selectedJob} addJobNote={props.addJobNote} toggleJobPaid={props.toggleJobPaid} workflowStages={props.workflowStages} compact />
+        <div className="staff-jobs-shell">
+          <StaffJobList
+            jobs={activeJobs}
+            selectedJobId={staffSelectedJob?.id}
+            setSelectedJobId={props.setSelectedJobId}
+            workflowStages={props.workflowStages}
+          />
+          <StaffJobReadOnlyDetail
+            job={staffSelectedJob}
+            workflowStages={props.workflowStages}
+            addJobNote={props.addJobNote}
+          />
         </div>
       </section>
       <section className="panel wide">
@@ -3372,6 +3478,118 @@ function StaffView(props: {
         <StaffRoster shifts={props.rosterShifts} updateRosterResponse={props.updateRosterResponse} />
       </section>
     </div>
+  );
+}
+
+function StaffJobList({
+  jobs,
+  selectedJobId,
+  setSelectedJobId,
+  workflowStages
+}: {
+  jobs: Job[];
+  selectedJobId?: string;
+  setSelectedJobId: (id: string) => void;
+  workflowStages: Record<JobStatus, WorkflowStage>;
+}) {
+  if (!jobs.length) {
+    return (
+      <div className="staff-job-list empty">
+        <ClipboardList size={22} />
+        <strong>No active jobs</strong>
+        <span>Active work will appear here when new jobs are added.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="staff-job-list">
+      {jobs.map((job) => (
+        <button
+          className={job.id === selectedJobId ? 'staff-job-row selected' : 'staff-job-row'}
+          key={job.id}
+          onClick={() => setSelectedJobId(job.id)}
+        >
+          <div>
+            <strong>{job.customer}</strong>
+            <span>{job.item}</span>
+          </div>
+          <div className="staff-job-meta">
+            <StatusBadge status={job.status} workflowStages={workflowStages} />
+            <PaymentBadge paid={job.paid} />
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function StaffJobReadOnlyDetail({
+  job,
+  workflowStages,
+  addJobNote
+}: {
+  job?: Job;
+  workflowStages: Record<JobStatus, WorkflowStage>;
+  addJobNote: (jobId: string, note: string) => void;
+}) {
+  const [draftNote, setDraftNote] = useState('');
+  if (!job) {
+    return (
+      <aside className="staff-job-detail empty">
+        <Sparkles size={22} />
+        <strong>Select a job</strong>
+        <span>Job details and internal notes will show here.</span>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="staff-job-detail">
+      <div className="detail-section-title">
+        <strong>Job details</strong>
+        <span>{job.id}</span>
+      </div>
+      <div className="staff-detail-card">
+        <h2>{job.customer}</h2>
+        <span>{job.phone}</span>
+        <p>{job.item}</p>
+        <div className="staff-detail-badges">
+          <StatusBadge status={job.status} workflowStages={workflowStages} />
+          <PaymentBadge paid={job.paid} />
+        </div>
+      </div>
+      <div className="staff-stage-strip">
+        {statusFlow.filter((status) => status !== 'completed').map((status, index) => (
+          <div key={status} className={statusFlow.indexOf(job.status) >= index ? 'staff-stage done' : 'staff-stage'}>
+            <span>{index + 1}</span>
+            <strong>{workflowStages[status].label}</strong>
+          </div>
+        ))}
+      </div>
+      <div className="job-note staff-notes">
+        <div className="detail-section-title">
+          <strong>Internal notes</strong>
+          <span>Staff only</span>
+        </div>
+        {job.notes.split('\n').map((line, index) => (
+          <p key={`${line}-${index}`}>{line}</p>
+        ))}
+      </div>
+      <div className="note-composer">
+        <textarea value={draftNote} onChange={(event) => setDraftNote(event.target.value)} placeholder="Add a handover note..." rows={3} />
+        <button
+          disabled={!draftNote.trim()}
+          onClick={() => {
+            addJobNote(job.id, draftNote);
+            setDraftNote('');
+          }}
+        >
+          <Plus size={16} />
+          Add note
+        </button>
+      </div>
+    </aside>
   );
 }
 
@@ -4108,11 +4326,10 @@ function MasterSmsSettingsPanel({
   );
 }
 
-function StaffShiftOverview({ staff }: { staff: StaffMember[] }) {
+function StaffShiftOverview({ staff, removeStaffMember }: { staff: StaffMember[]; removeStaffMember: (member: StaffMember) => void }) {
   const groups = [
     { key: 'on', label: 'On shift', staff: staff.filter((member) => member.active && member.clockedIn) },
-    { key: 'off', label: 'Off shift', staff: staff.filter((member) => member.active && !member.clockedIn) },
-    { key: 'paused', label: 'Paused', staff: staff.filter((member) => !member.active) }
+    { key: 'off', label: 'Off shift', staff: staff.filter((member) => member.active && !member.clockedIn) }
   ];
 
   return (
@@ -4136,8 +4353,13 @@ function StaffShiftOverview({ staff }: { staff: StaffMember[] }) {
                   <span>{member.clockedIn ? `Since ${member.clockInAt}` : `Last ${member.lastShift}`}</span>
                 </div>
                 <span className={`staff-state-pill ${member.clockedIn ? 'active' : member.active ? 'off' : 'paused'}`}>
-                  {member.clockedIn ? 'On shift' : member.active ? 'Off shift' : 'Paused'}
+                  {member.clockedIn ? 'On shift' : 'Off shift'}
                 </span>
+                {member.role !== 'Owner' && (
+                  <button className="staff-remove-button" onClick={() => removeStaffMember(member)}>
+                    Remove access
+                  </button>
+                )}
               </div>
             )) : (
               <div className="staff-empty-row">No staff in this group.</div>
