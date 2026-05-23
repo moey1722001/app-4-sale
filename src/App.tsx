@@ -2854,7 +2854,7 @@ function BusinessAdminView(props: {
       </section>
 
       <section className="admin-secondary-grid">
-        <details className="panel admin-drawer roster-drawer" open>
+        <details className="panel admin-drawer roster-drawer">
           <summary><CalendarPlus size={18} /> Rostering <span>{pendingRosterReplies} pending</span></summary>
           <RosterOperationsSummary shifts={props.rosterShifts} toast={props.rosterToast} />
           <RosterPlanner
