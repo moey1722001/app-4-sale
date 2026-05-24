@@ -316,10 +316,10 @@ const defaultEmailByRole: Record<UserRole, string> = {
   staff: ''
 };
 const productHighlights = [
-  'White-label dashboard for laundromats, mechanics, groomers, cleaners, clinics, and repair shops',
-  'Simple job workflow: collected, in progress, ready for pickup, completed',
-  'Customer updates are previewed, logged, and sent through the platform SMS provider managed by Super Admin',
-  "Staff can see today's work, notes, payments, rosters, and shift clock status"
+  'Branded portals for each business and team',
+  'Simple active job queue with automatic customer updates',
+  'Rosters, shift responses, and clock-in visibility',
+  'Clean history for payments, notes, and customer messages'
 ];
 const defaultMasterSmsSettings: MasterSmsSettings = {
   provider: 'clicksend',
@@ -2863,39 +2863,102 @@ function LoginView({
 }
 
 function ProductOverviewView() {
+  const overviewWorkflow = [
+    ['01', 'Received', 'New customer job added'],
+    ['02', 'In progress', 'Team starts the work'],
+    ['03', 'Ready', 'Customer gets notified'],
+    ['04', 'Completed', 'Job archived for history']
+  ];
+  const industries = [
+    ['Laundromats', 'Drop-off orders, ready alerts, payment records'],
+    ['Repair shops', 'Job progress, customer notes, pickup updates'],
+    ['Detailers', 'Daily work queue, staff handover, status messages'],
+    ['Clinics & salons', 'Appointments, reminders, simple customer updates']
+  ];
+
   return (
     <main className="overview-screen">
       <section className="overview-hero">
-        <div className="brand-lockup">
-          <BrandMark className="login-logo" />
+        <div className="overview-hero-copy">
+          <div className="brand-lockup overview-brand">
+            <BrandMark className="login-logo" />
+            <div>
+              <strong>Verola</strong>
+              <span>Run your business. Grow every day.</span>
+            </div>
+          </div>
           <div>
-            <strong>Verola</strong>
-            <span>White-label workflow updates for service businesses</span>
+            <span className="eyebrow">Client updates and job tracking for service businesses</span>
+            <h1>A cleaner way to run customer jobs, staff shifts, and pickup updates.</h1>
+            <p>Verola gives each business a polished branded workspace for active orders, customer SMS updates, payments, notes, staff rosters, and daily job history.</p>
+          </div>
+          <div className="overview-actions">
+            <a className="primary-action" href="/login">Sign in</a>
+            <a className="secondary-action" href="#workflow">See how it works</a>
+          </div>
+          <div className="overview-trust-row" aria-label="Product highlights">
+            <span>White-label ready</span>
+            <span>Mobile friendly</span>
+            <span>Built for daily operations</span>
           </div>
         </div>
-        <div>
-          <span className="eyebrow">Service business operating system</span>
-          <h1>Track every customer job and keep people updated automatically.</h1>
-          <p>Verola gives small service businesses a branded portal for drop-offs, job progress, staff handover, rosters, payments, and customer SMS updates.</p>
-        </div>
-        <div className="overview-actions">
-          <a className="primary-action" href="/login">Open login</a>
-          <a className="secondary-action" href="/super-admin">Super Admin portal</a>
-        </div>
+        <aside className="overview-product-card" aria-label="Verola workflow preview">
+          <div className="overview-product-header">
+            <div>
+              <span>Today</span>
+              <strong>Active jobs</strong>
+            </div>
+            <span className="overview-live-pill">Live</span>
+          </div>
+          <div className="overview-job-preview">
+            <div>
+              <strong>Sarah McKenzie</strong>
+              <span>2 bags wash and fold</span>
+            </div>
+            <span className="status-badge green">Ready</span>
+          </div>
+          <div className="overview-message-preview">
+            <MessageSquareText size={18} />
+            <span>Customer notified at 2:41 PM</span>
+          </div>
+          <div className="overview-mini-stats">
+            <div><strong>12</strong><span>Jobs today</span></div>
+            <div><strong>4</strong><span>Ready</span></div>
+            <div><strong>3</strong><span>On shift</span></div>
+          </div>
+        </aside>
       </section>
-      <section className="overview-grid">
-        {productHighlights.map((highlight) => (
+      <section className="overview-grid" id="workflow">
+        {productHighlights.map((highlight, index) => (
           <article className="overview-card" key={highlight}>
+            <span>{String(index + 1).padStart(2, '0')}</span>
             <CheckCircle2 size={20} />
             <p>{highlight}</p>
           </article>
         ))}
       </section>
       <section className="overview-industry-strip">
-        <div><strong>Laundromat</strong><span>Order ready for pickup</span></div>
-        <div><strong>Mechanic</strong><span>Vehicle inspection update</span></div>
-        <div><strong>Pet groomer</strong><span>Pickup notification</span></div>
-        <div><strong>Beauty clinic</strong><span>Appointment reminder</span></div>
+        {overviewWorkflow.map(([step, title, copy]) => (
+          <div key={step}>
+            <small>{step}</small>
+            <strong>{title}</strong>
+            <span>{copy}</span>
+          </div>
+        ))}
+      </section>
+      <section className="overview-industries">
+        <div>
+          <span className="eyebrow">Built for real counters, workshops, and front desks</span>
+          <h2>One workflow, personalised to each business.</h2>
+        </div>
+        <div className="overview-industries-grid">
+          {industries.map(([title, copy]) => (
+            <article key={title}>
+              <strong>{title}</strong>
+              <span>{copy}</span>
+            </article>
+          ))}
+        </div>
       </section>
     </main>
   );
