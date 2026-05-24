@@ -1318,8 +1318,17 @@ function App() {
       || staffMembers.some((member) =>
         member.businessId === invite.businessId
         && member.active
-        && member.email?.toLowerCase() === invite.adminEmail.toLowerCase()
-        && (member.lastShift !== 'Invite pending' || member.clockedIn || member.clockInAt)
+        && (
+          member.email?.toLowerCase() === invite.adminEmail.toLowerCase()
+          || (invite.phone && member.phone === invite.phone)
+          || member.name.toLowerCase() === invite.contactName.toLowerCase()
+        )
+        && (
+          member.lastShift !== 'Invite pending'
+          || member.email?.toLowerCase() === invite.adminEmail.toLowerCase()
+          || member.clockedIn
+          || member.clockInAt
+        )
       )
     );
 
@@ -1487,9 +1496,19 @@ function App() {
         if (index === -1) {
           next.push(member);
           changed = true;
-        } else if (next[index].lastShift === 'Invite pending' && member.lastShift === 'Account active') {
-          next[index] = { ...next[index], active: true, lastShift: 'Account active' };
-          changed = true;
+        } else {
+          const shouldMarkActive = member.lastShift === 'Account active' && next[index].lastShift === 'Invite pending';
+          const shouldFillIdentity = next[index].email !== member.email || next[index].phone !== member.phone;
+          if (shouldMarkActive || shouldFillIdentity) {
+            next[index] = {
+              ...next[index],
+              email: next[index].email || member.email,
+              phone: next[index].phone || member.phone,
+              active: true,
+              lastShift: shouldMarkActive ? 'Account active' : next[index].lastShift
+            };
+            changed = true;
+          }
         }
       });
       return changed ? next : current;

@@ -139,16 +139,22 @@ async function findOrCreateUser(users, email, name) {
 async function upsertInvite(databases, payload) {
   const now = new Date().toISOString();
   const inviteId = payload.inviteId || ID.unique();
+  let existing = null;
+  try {
+    existing = await databases.getDocument(databaseId, invitesCollectionId, inviteId);
+  } catch { /* create below */ }
   const data = {
     organisationId: payload.businessId,
     businessName: payload.businessName,
     contactName: payload.contactName || 'Business owner',
     adminEmail: payload.adminEmail,
     phone: payload.phone || '',
-    tokenHash: tokenHash(payload.token),
+    tokenHash: existing?.tokenHash || tokenHash(payload.token),
     role: payload.role || 'business_admin',
-    status: 'pending',
-    createdAt: payload.createdAt || now,
+    status: existing?.status === 'accepted' ? 'accepted' : 'pending',
+    acceptedAt: existing?.acceptedAt || undefined,
+    acceptedByUserId: existing?.acceptedByUserId || undefined,
+    createdAt: existing?.createdAt || payload.createdAt || now,
     expiresAt: payload.expiresAt,
   };
   try {
@@ -208,12 +214,36 @@ async function lookupInviteById(databases, inviteId) {
   } catch { return null; }
 }
 
-async function listInvitesByOrg(databases, organisationId) {
+async function listInvitesByOrg(databases, users, organisationId) {
   const result = await databases.listDocuments(databaseId, invitesCollectionId, [
     Query.equal('organisationId', organisationId),
     Query.limit(100)
   ]);
-  return result.documents.map((doc) => normalizeInviteDoc(doc, null));
+  const invites = [];
+  for (const doc of result.documents) {
+    let nextDoc = doc;
+    if (doc.status !== 'accepted') {
+      try {
+        const matchingUsers = await users.list([Query.equal('email', doc.adminEmail)]);
+        const acceptedUser = matchingUsers.users.find((user) =>
+          user.prefs?.businessId === organisationId
+          && (
+            user.prefs?.role === (doc.role === 'staff' ? 'staff' : 'admin')
+            || user.prefs?.role === doc.role
+          )
+        );
+        if (acceptedUser) {
+          nextDoc = await databases.updateDocument(databaseId, invitesCollectionId, doc.$id, {
+            status: 'accepted',
+            acceptedAt: new Date().toISOString(),
+            acceptedByUserId: acceptedUser.$id
+          });
+        }
+      } catch { /* best-effort accepted invite reconciliation */ }
+    }
+    invites.push(normalizeInviteDoc(nextDoc, null));
+  }
+  return invites;
 }
 
 async function listOrganisations(databases) {
@@ -433,7 +463,7 @@ export default async ({ req, res, log, error }) => {
     if (action === 'list_invites_by_org') {
       if (!services.configured) return json(res, { invites: [], error: services.error }, 503);
       if (!payload.businessId) return json(res, { invites: [], error: 'Missing businessId.' }, 400);
-      const invites = await listInvitesByOrg(services.databases, payload.businessId);
+      const invites = await listInvitesByOrg(services.databases, services.users, payload.businessId);
       return json(res, { invites });
     }
 
