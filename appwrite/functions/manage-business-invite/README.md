@@ -27,6 +27,7 @@ APPWRITE_DATABASE_ID=app4sale
 APPWRITE_API_KEY=server-api-key-with-databases-documents-users-scopes
 APPWRITE_INVITES_COLLECTION_ID=organisationInvites
 APPWRITE_ORGANISATIONS_COLLECTION_ID=organisations
+APPWRITE_LOGO_BUCKET_ID=organisation-logos
 APP_BASE_URL=https://your-verola-domain.com
 RESEND_API_KEY=your-resend-api-key
 INVITE_EMAIL_FROM=Verola <invites@your-domain.com>

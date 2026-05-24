@@ -14,7 +14,7 @@ export const appwriteInviteFunctionId = configuredInviteFunctionId === '6a0f5ee7
   ? '6a0f5ee400325b40b2e9'
   : configuredInviteFunctionId;
 export const appwriteSmsFunctionId = import.meta.env.VITE_APPWRITE_SMS_FUNCTION_ID as string | undefined;
-export const appwriteLogoBucketId = import.meta.env.VITE_APPWRITE_LOGO_BUCKET_ID as string | undefined;
+export const appwriteLogoBucketId = (import.meta.env.VITE_APPWRITE_LOGO_BUCKET_ID as string | undefined) || 'organisation-logos';
 export const appBaseUrl = (import.meta.env.VITE_APP_URL as string | undefined)?.replace(/\/$/, '');
 
 export const hasAppwriteConfig = true;

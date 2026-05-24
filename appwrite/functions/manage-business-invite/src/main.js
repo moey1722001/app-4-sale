@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 const databaseId = process.env.APPWRITE_DATABASE_ID || 'verola';
 const invitesCollectionId = process.env.APPWRITE_INVITES_COLLECTION_ID || 'organisationInvites';
 const organisationsCollectionId = process.env.APPWRITE_ORGANISATIONS_COLLECTION_ID || 'organisations';
+const logoBucketId = process.env.APPWRITE_LOGO_BUCKET_ID || 'organisation-logos';
 
 function json(res, data, status = 200) {
   return res.json(data, status);
@@ -30,10 +31,95 @@ function createAppwriteServices(req) {
 
   return {
     configured: true,
+    endpoint: process.env.APPWRITE_FUNCTION_API_ENDPOINT,
+    projectId: process.env.APPWRITE_FUNCTION_PROJECT_ID,
+    apiKey,
     databases: new Databases(client),
     users: new Users(client),
     account: new Account(client),
   };
+}
+
+function appwriteHeaders(services, contentType = 'application/json') {
+  const headers = {
+    'X-Appwrite-Project': services.projectId,
+    'X-Appwrite-Key': services.apiKey
+  };
+  if (contentType) headers['Content-Type'] = contentType;
+  return headers;
+}
+
+async function appwriteRequest(services, method, path, body) {
+  const response = await fetch(`${services.endpoint}${path}`, {
+    method,
+    headers: appwriteHeaders(services),
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok && response.status !== 409) {
+    throw new Error(payload.message || `${method} ${path} failed`);
+  }
+  return payload;
+}
+
+async function ensureLogoBucket(services) {
+  await appwriteRequest(services, 'POST', '/storage/buckets', {
+    bucketId: logoBucketId,
+    name: 'Organisation Logos',
+    permissions: [],
+    fileSecurity: true,
+    enabled: true,
+    maximumFileSize: 2097152,
+    allowedFileExtensions: ['png', 'jpg', 'jpeg', 'svg', 'webp'],
+    compression: 'gzip',
+    encryption: true,
+    antivirus: true
+  });
+}
+
+function parseDataUrl(dataUrl) {
+  const match = /^data:([^;]+);base64,(.+)$/i.exec(dataUrl || '');
+  if (!match) throw new Error('Invalid logo data.');
+  return {
+    type: match[1],
+    bytes: Buffer.from(match[2], 'base64')
+  };
+}
+
+async function uploadLogoFile(services, payload) {
+  const { type, bytes } = parseDataUrl(payload.logoDataUrl);
+  if (!type.startsWith('image/')) throw new Error('Logo must be an image.');
+  if (bytes.length > 2 * 1024 * 1024) throw new Error('Logo must be smaller than 2 MB.');
+  await ensureLogoBucket(services);
+
+  const form = new FormData();
+  const fileId = ID.unique();
+  const extension = (payload.logoName || 'logo.png').split('.').pop() || 'png';
+  const filename = payload.logoName || `logo.${extension}`;
+  form.append('fileId', fileId);
+  form.append('file', new Blob([bytes], { type }), filename);
+  form.append('permissions[]', 'read("any")');
+
+  const response = await fetch(`${services.endpoint}/storage/buckets/${logoBucketId}/files`, {
+    method: 'POST',
+    headers: appwriteHeaders(services, null),
+    body: form
+  });
+  const text = await response.text();
+  const file = text ? JSON.parse(text) : {};
+  if (!response.ok) throw new Error(file.message || 'Logo upload failed.');
+  const logoUrl = `${services.endpoint}/storage/buckets/${logoBucketId}/files/${file.$id}/view?project=${encodeURIComponent(services.projectId)}`;
+  return { logoFileId: file.$id, logoUrl, logoName: filename };
+}
+
+async function deleteLogoFile(services, fileId) {
+  if (!fileId) return;
+  try {
+    await appwriteRequest(services, 'DELETE', `/storage/buckets/${logoBucketId}/files/${fileId}`);
+  } catch {
+    // If the file was already removed, still clear the organisation branding.
+  }
 }
 
 async function findOrCreateUser(users, email, name) {
@@ -246,6 +332,36 @@ export default async ({ req, res, log, error }) => {
       if (!services.configured) return json(res, { accepted: false, error: services.error }, 503);
       const result = await acceptInvite(services.databases, services.users, payload);
       return json(res, result);
+    }
+
+    if (action === 'save_branding') {
+      if (!services.configured) return json(res, { saved: false, error: services.error }, 503);
+      if (!payload.businessId || !payload.logoDataUrl) {
+        return json(res, { saved: false, error: 'Missing businessId or logo data.' }, 400);
+      }
+      const logo = await uploadLogoFile(services, payload);
+      await services.databases.updateDocument(databaseId, organisationsCollectionId, payload.businessId, {
+        logoFileId: logo.logoFileId,
+        logoUrl: logo.logoUrl,
+        logoName: logo.logoName,
+      });
+      log(`Branding logo saved for ${payload.businessId}`);
+      return json(res, { saved: true, ...logo });
+    }
+
+    if (action === 'remove_branding') {
+      if (!services.configured) return json(res, { removed: false, error: services.error }, 503);
+      if (!payload.businessId) {
+        return json(res, { removed: false, error: 'Missing businessId.' }, 400);
+      }
+      await deleteLogoFile(services, payload.logoFileId);
+      await services.databases.updateDocument(databaseId, organisationsCollectionId, payload.businessId, {
+        logoFileId: '',
+        logoUrl: '',
+        logoName: '',
+      });
+      log(`Branding logo removed for ${payload.businessId}`);
+      return json(res, { removed: true });
     }
 
     return json(res, { error: 'Unknown action.' }, 400);

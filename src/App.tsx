@@ -651,6 +651,52 @@ async function patchBusinessDocument(businessId: string, patch: Partial<Business
   return true;
 }
 
+async function saveBrandingThroughFunction(businessId: string, file: File, dataUrl: string) {
+  if (!hasAppwriteConfig || !appwriteInviteFunctionId) return null;
+  const execution = await functions.createExecution(
+    appwriteInviteFunctionId,
+    JSON.stringify({
+      action: 'save_branding',
+      businessId,
+      logoName: file.name,
+      logoType: file.type,
+      logoDataUrl: dataUrl
+    }),
+    false,
+    '/',
+    ExecutionMethod.POST,
+    { 'content-type': 'application/json' }
+  );
+  const result = execution as { responseStatusCode?: number; responseBody?: string };
+  const payload = result.responseBody ? JSON.parse(result.responseBody) as { saved?: boolean; logoUrl?: string; logoFileId?: string; logoName?: string; error?: string } : {};
+  if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error || !payload.saved) {
+    throw new Error(payload.error || 'Logo persistence function failed.');
+  }
+  return payload;
+}
+
+async function removeBrandingThroughFunction(businessId: string, logoFileId?: string) {
+  if (!hasAppwriteConfig || !appwriteInviteFunctionId) return false;
+  const execution = await functions.createExecution(
+    appwriteInviteFunctionId,
+    JSON.stringify({
+      action: 'remove_branding',
+      businessId,
+      logoFileId
+    }),
+    false,
+    '/',
+    ExecutionMethod.POST,
+    { 'content-type': 'application/json' }
+  );
+  const result = execution as { responseStatusCode?: number; responseBody?: string };
+  const payload = result.responseBody ? JSON.parse(result.responseBody) as { removed?: boolean; error?: string } : {};
+  if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error || !payload.removed) {
+    throw new Error(payload.error || 'Logo removal function failed.');
+  }
+  return true;
+}
+
 function rosterShiftFromDocument(document: RosterShiftDocument): RosterShift {
   return {
     id: document.$id,
@@ -1880,7 +1926,12 @@ function App() {
     let logoFileId: string | undefined;
 
     try {
-      if (hasAppwriteConfig && appwriteLogoBucketId) {
+      const savedBranding = await saveBrandingThroughFunction(businessId, file, logoUrl);
+      if (savedBranding) {
+        logoUrl = savedBranding.logoUrl || logoUrl;
+        logoFileId = savedBranding.logoFileId;
+        debugPersistence('branding saved through function', { businessId, logoFileId });
+      } else if (hasAppwriteConfig && appwriteLogoBucketId) {
         const uploadedFile = await storage.createFile(appwriteLogoBucketId, ID.unique(), file);
         logoFileId = uploadedFile.$id;
         logoUrl = logoViewUrl(logoFileId) || logoUrl;
@@ -1888,8 +1939,9 @@ function App() {
         debugPersistence('logo URL generated', { businessId, logoUrl });
       }
     } catch (error) {
-      debugPersistence('logo upload storage failed, local fallback active', error instanceof Error ? error.message : error);
-      setInviteNotice('Logo preview saved locally. Appwrite Storage needs the logo bucket and permissions configured.');
+      debugPersistence('logo persistence failed before local preview', error instanceof Error ? error.message : error);
+      setInviteNotice(error instanceof Error ? `Logo could not be saved permanently: ${error.message}` : 'Logo could not be saved permanently.');
+      return;
     }
 
     const patch = {
@@ -1908,7 +1960,7 @@ function App() {
       )
     );
     try {
-      if (await patchBusinessDocument(businessId, patch)) {
+      if (logoFileId || (await patchBusinessDocument(businessId, patch))) {
         const persistedBusinesses = await fetchPersistedBusinesses();
         if (persistedBusinesses.length) setBusinesses(persistedBusinesses);
         debugPersistence('branding saved', { businessId, logoFileId });
@@ -1916,7 +1968,7 @@ function App() {
       setInviteNotice('Logo saved. It will appear across this organisation portal.');
     } catch (error) {
       debugPersistence('branding save failed, local fallback active', error instanceof Error ? error.message : error);
-      setInviteNotice('Logo updated locally. Appwrite persistence needs database/storage permissions.');
+      setInviteNotice(error instanceof Error ? `Logo saved, but refresh verification failed: ${error.message}` : 'Logo saved, but refresh verification failed.');
     }
   }
 
@@ -1935,10 +1987,13 @@ function App() {
       )
     );
     try {
-      if (currentBusiness?.logoFileId && appwriteLogoBucketId) {
+      const removedThroughFunction = await removeBrandingThroughFunction(businessId, currentBusiness?.logoFileId);
+      if (removedThroughFunction) {
+        debugPersistence('branding removed through function', { businessId });
+      } else if (currentBusiness?.logoFileId && appwriteLogoBucketId) {
         await storage.deleteFile(appwriteLogoBucketId, currentBusiness.logoFileId);
       }
-      if (await patchBusinessDocument(businessId, { logoName: undefined, logoUrl: undefined, logoFileId: undefined })) {
+      if (removedThroughFunction || await patchBusinessDocument(businessId, { logoName: undefined, logoUrl: undefined, logoFileId: undefined })) {
         debugPersistence('branding saved', { businessId, logoRemoved: true });
       }
       setInviteNotice('Logo removed. This business now uses the Verola fallback mark.');
