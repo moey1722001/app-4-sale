@@ -72,6 +72,18 @@ type RosterShiftDocument = {
   createdBy?: string;
 };
 
+type StaffShiftDocument = {
+  $id: string;
+  $createdAt?: string;
+  organisationId: string;
+  staffUserId: string;
+  staffName: string;
+  clockInAt: string;
+  clockOutAt?: string;
+  status: 'clocked_in' | 'clocked_out';
+  totalMinutes?: number;
+};
+
 type Business = {
   id: string;
   name: string;
@@ -593,7 +605,32 @@ function organisationPayloadFromBusiness(business: Business) {
 
 async function fetchPersistedBusinesses() {
   if (!hasAppwriteConfig || !appwriteDatabaseId) return [];
-  const response = await databases.listDocuments(appwriteDatabaseId, appwriteOrganisationCollectionId);
+  let documents: unknown[];
+  if (appwriteInviteFunctionId) {
+    try {
+      const execution = await functions.createExecution(
+        appwriteInviteFunctionId,
+        JSON.stringify({ action: 'list_organisations' }),
+        false,
+        '/',
+        ExecutionMethod.POST,
+        { 'content-type': 'application/json' }
+      );
+      const result = execution as { responseStatusCode?: number; responseBody?: string };
+      const payload = result.responseBody ? JSON.parse(result.responseBody) as { organisations?: unknown[]; error?: string } : {};
+      if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error) {
+        throw new Error(payload.error || 'Organisation lookup function failed.');
+      }
+      documents = payload.organisations || [];
+    } catch (error) {
+      debugPersistence('organisation function lookup failed, trying client database read', error instanceof Error ? error.message : error);
+      const response = await databases.listDocuments(appwriteDatabaseId, appwriteOrganisationCollectionId);
+      documents = response.documents;
+    }
+  } else {
+    const response = await databases.listDocuments(appwriteDatabaseId, appwriteOrganisationCollectionId);
+    documents = response.documents;
+  }
   const retiredStarterNames = new Set([
     'Fresh Fold Laundry',
     'Rapid Auto Care',
@@ -602,7 +639,7 @@ async function fetchPersistedBusinesses() {
     'Glow Lane Beauty',
     'Verola Workspace'
   ]);
-  const businesses = response.documents
+  const businesses = documents
     .map((document) => businessFromOrganisationDocument(document as unknown as OrganisationDocument))
     .filter((business) => {
       const normalizedName = business.name.trim().toLowerCase();
@@ -648,6 +685,28 @@ async function patchBusinessDocument(businessId: string, patch: Partial<Business
   if (patch.contactName !== undefined) payload.contactName = patch.contactName;
   if (patch.contactPhone !== undefined) payload.contactPhone = patch.contactPhone;
   await databases.updateDocument(appwriteDatabaseId, appwriteOrganisationCollectionId, businessId, payload);
+  return true;
+}
+
+async function saveOrganisationThroughFunction(business: Business) {
+  if (!hasAppwriteConfig || !appwriteInviteFunctionId) return false;
+  const execution = await functions.createExecution(
+    appwriteInviteFunctionId,
+    JSON.stringify({
+      action: 'save_organisation',
+      business: organisationPayloadFromBusiness(business),
+      businessId: business.id
+    }),
+    false,
+    '/',
+    ExecutionMethod.POST,
+    { 'content-type': 'application/json' }
+  );
+  const result = execution as { responseStatusCode?: number; responseBody?: string };
+  const payload = result.responseBody ? JSON.parse(result.responseBody) as { saved?: boolean; error?: string } : {};
+  if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error || !payload.saved) {
+    throw new Error(payload.error || 'Organisation persistence function failed.');
+  }
   return true;
 }
 
@@ -759,6 +818,15 @@ async function deletePersistedRosterShift(shiftId: string) {
   return true;
 }
 
+type StaffClockState = {
+  staffUserId: string;
+  staffName: string;
+  clockedIn: boolean;
+  clockInAt?: string;
+  lastShift: string;
+  hoursToday: number;
+};
+
 function staffClockPayload(member: StaffMember, businessId: string, clockingOut: boolean) {
   const now = new Date().toISOString();
   return {
@@ -772,11 +840,136 @@ function staffClockPayload(member: StaffMember, businessId: string, clockingOut:
   };
 }
 
+function staffClockStateFromDocument(document: StaffShiftDocument): StaffClockState {
+  const clockIn = new Date(document.clockInAt);
+  const clockOut = document.clockOutAt ? new Date(document.clockOutAt) : undefined;
+  const totalMinutes = document.totalMinutes ?? (
+    clockOut
+      ? Math.max(1, Math.round((clockOut.getTime() - clockIn.getTime()) / 60000))
+      : Math.max(1, Math.round((Date.now() - clockIn.getTime()) / 60000))
+  );
+  return {
+    staffUserId: document.staffUserId,
+    staffName: document.staffName,
+    clockedIn: document.status === 'clocked_in',
+    clockInAt: document.status === 'clocked_in' ? nowLabel(clockIn) : undefined,
+    lastShift: document.status === 'clocked_in' ? `Since ${nowLabel(clockIn)}` : nowLabel(clockOut || clockIn),
+    hoursToday: Math.round((totalMinutes / 60) * 10) / 10
+  };
+}
+
+function mergeStaffClockStates(staff: StaffMember[], states: StaffClockState[], businessId: string) {
+  if (!states.length) return staff;
+  const byId = new Map(states.map((state) => [state.staffUserId, state]));
+  const next = staff.map((member) => {
+    if (member.businessId && member.businessId !== businessId) return member;
+    const state = byId.get(staffUserIdFor(member));
+    if (!state) return member;
+    return {
+      ...member,
+      clockedIn: state.clockedIn,
+      clockInAt: state.clockInAt,
+      lastShift: state.clockedIn ? state.lastShift : state.lastShift,
+      hoursToday: state.hoursToday
+    };
+  });
+
+  states.forEach((state) => {
+    const exists = next.some((member) => member.businessId === businessId && staffUserIdFor(member) === state.staffUserId);
+    if (!exists) {
+      next.push({
+        businessId,
+        name: state.staffName,
+        role: 'Staff',
+        email: state.staffUserId.includes('@') ? state.staffUserId : undefined,
+        phone: state.staffUserId,
+        active: true,
+        clockedIn: state.clockedIn,
+        clockInAt: state.clockInAt,
+        hoursToday: state.hoursToday,
+        lastShift: state.lastShift
+      });
+    }
+  });
+  return next;
+}
+
 async function persistStaffClock(member: StaffMember, businessId: string, clockingOut: boolean) {
   if (!hasAppwriteConfig || !appwriteDatabaseId) return false;
   const documentId = `clock-${staffUserIdFor(member)}-${Date.now()}`.slice(0, 36);
   await databases.createDocument(appwriteDatabaseId, 'staffShifts', documentId, staffClockPayload(member, businessId, clockingOut));
   return true;
+}
+
+async function persistStaffClockThroughFunction(member: StaffMember, businessId: string, clockingOut: boolean) {
+  if (!hasAppwriteConfig || !appwriteInviteFunctionId) return false;
+  const execution = await functions.createExecution(
+    appwriteInviteFunctionId,
+    JSON.stringify({
+      action: 'staff_clock_event',
+      businessId,
+      staffUserId: staffUserIdFor(member),
+      staffName: member.name,
+      clockingOut,
+      hoursToday: member.hoursToday
+    }),
+    false,
+    '/',
+    ExecutionMethod.POST,
+    { 'content-type': 'application/json' }
+  );
+  const result = execution as { responseStatusCode?: number; responseBody?: string };
+  const payload = result.responseBody ? JSON.parse(result.responseBody) as { saved?: boolean; error?: string } : {};
+  if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error || !payload.saved) {
+    throw new Error(payload.error || 'Clock event function failed.');
+  }
+  return true;
+}
+
+async function fetchStaffClockStatesThroughFunction(businessId: string) {
+  if (!hasAppwriteConfig || !appwriteInviteFunctionId) return [];
+  const execution = await functions.createExecution(
+    appwriteInviteFunctionId,
+    JSON.stringify({ action: 'list_staff_clock', businessId }),
+    false,
+    '/',
+    ExecutionMethod.POST,
+    { 'content-type': 'application/json' }
+  );
+  const result = execution as { responseStatusCode?: number; responseBody?: string };
+  const payload = result.responseBody ? JSON.parse(result.responseBody) as { states?: StaffClockState[]; error?: string } : {};
+  if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error) {
+    throw new Error(payload.error || 'Clock state lookup failed.');
+  }
+  return (payload.states || []).map((state) => {
+    const clockInDate = state.clockInAt ? new Date(state.clockInAt) : undefined;
+    const lastShiftDate = state.lastShift ? new Date(state.lastShift) : undefined;
+    return {
+      ...state,
+      clockInAt: clockInDate && !Number.isNaN(clockInDate.getTime()) ? nowLabel(clockInDate) : state.clockInAt,
+      lastShift: state.clockedIn
+        ? (clockInDate && !Number.isNaN(clockInDate.getTime()) ? `Since ${nowLabel(clockInDate)}` : state.lastShift)
+        : (lastShiftDate && !Number.isNaN(lastShiftDate.getTime()) ? nowLabel(lastShiftDate) : state.lastShift)
+    };
+  });
+}
+
+async function fetchInvitesThroughFunction(businessId: string) {
+  if (!hasAppwriteConfig || !appwriteInviteFunctionId) return [];
+  const execution = await functions.createExecution(
+    appwriteInviteFunctionId,
+    JSON.stringify({ action: 'list_invites_by_org', businessId }),
+    false,
+    '/',
+    ExecutionMethod.POST,
+    { 'content-type': 'application/json' }
+  );
+  const result = execution as { responseStatusCode?: number; responseBody?: string };
+  const payload = result.responseBody ? JSON.parse(result.responseBody) as { invites?: OrganisationInvite[]; error?: string } : {};
+  if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error) {
+    throw new Error(payload.error || 'Invite lookup failed.');
+  }
+  return (payload.invites || []).map((invite) => normalizeInvite(invite));
 }
 
 function inviteStatus(invite: OrganisationInvite): InviteStatus {
@@ -1326,6 +1519,41 @@ function App() {
   }, [activeBusiness.id]);
 
   useEffect(() => {
+    if (!hasAppwriteConfig || !appwriteInviteFunctionId || !activeBusiness?.id) return;
+    let cancelled = false;
+
+    const refreshSharedOrganisationState = async () => {
+      try {
+        const [persistedInvites, clockStates] = await Promise.all([
+          fetchInvitesThroughFunction(activeBusiness.id),
+          fetchStaffClockStatesThroughFunction(activeBusiness.id)
+        ]);
+        if (cancelled) return;
+        if (persistedInvites.length) {
+          setOrganisationInvites((current) => {
+            const incomingIds = new Set(persistedInvites.map((invite) => invite.id));
+            const untouched = current.filter((invite) => invite.businessId !== activeBusiness.id || !incomingIds.has(invite.id));
+            return [...persistedInvites, ...untouched];
+          });
+        }
+        if (clockStates.length) {
+          setStaffMembers((current) => mergeStaffClockStates(current, clockStates, activeBusiness.id));
+        }
+      } catch (error) {
+        debugPersistence('shared organisation state refresh failed', error instanceof Error ? error.message : error);
+      }
+    };
+
+    refreshSharedOrganisationState();
+    const interval = window.setInterval(refreshSharedOrganisationState, 10000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeBusiness.id]);
+
+  useEffect(() => {
     writeStoredValue(workflowStorageKey, workflowStages);
   }, [workflowStages]);
 
@@ -1541,6 +1769,7 @@ function App() {
 
   async function sendInviteEmailForInvite(invite: OrganisationInvite) {
     const { subject, body, url } = buildPersonalisedInviteMessage(invite);
+    const inviteBusiness = businesses.find((business) => business.id === invite.businessId);
 
     setInviteSendingId(invite.id);
     setInviteNotice('');
@@ -1564,7 +1793,8 @@ function App() {
             messageBody: body,
             createdAt: invite.createdAt,
             expiresAt: invite.expiresAt,
-            logoUrl: businesses.find((business) => business.id === invite.businessId)?.logoUrl
+            logoUrl: inviteBusiness?.logoUrl,
+            businessDetails: inviteBusiness ? organisationPayloadFromBusiness(inviteBusiness) : undefined
           }),
           false,
           '/',
@@ -1680,9 +1910,16 @@ function App() {
         }
       }
     } catch (error) {
-      debugInvite('invite accept error, continuing with local setup', {
+      debugInvite('invite accept error', {
         id: invite.id, error: error instanceof Error ? error.message : error
       });
+      if (hasAppwriteConfig && appwriteInviteFunctionId) {
+        setSetupDraft((current) => ({
+          ...current,
+          error: error instanceof Error ? error.message : 'Setup could not be completed. Please ask for a new invite.'
+        }));
+        return;
+      }
     }
 
     // Local state update (always runs even if Appwrite calls fail)
@@ -1770,10 +2007,15 @@ function App() {
 
     setBusinesses((current) => [business, ...current]);
     try {
-      await persistBusinessDocument(business);
+      if (!(await saveOrganisationThroughFunction(business))) {
+        await persistBusinessDocument(business);
+      }
+      debugPersistence('business created and persisted', { businessId: business.id, name: business.name });
     } catch (error) {
       debugPersistence('business create persistence failed, local fallback active', error instanceof Error ? error.message : error);
-      setInviteNotice('Business created locally. Appwrite persistence needs database permissions or the organisation function.');
+      setBusinesses((current) => current.filter((item) => item.id !== business.id));
+      setInviteNotice(error instanceof Error ? `Business could not be saved permanently: ${error.message}` : 'Business could not be saved permanently.');
+      return;
     }
     if (business.adminEmail) {
       setOrganisationInvites((current) => [invite, ...current]);
@@ -2318,30 +2560,35 @@ function App() {
     );
   }
 
-  function toggleStaffClock(name: string) {
-    const member = staffMembers.find((item) => item.name === name && (!item.businessId || item.businessId === activeBusiness.id));
-    const clockingOut = Boolean(member?.clockedIn);
+  function toggleStaffClock(staffMember: StaffMember) {
+    const name = staffMember.name;
+    const member = staffMembers.find((item) => staffIdentityMatches(item, { email: staffMember.email || staffMember.phone, name, role: 'staff', businessId: activeBusiness.id }) && (!item.businessId || item.businessId === activeBusiness.id))
+      ?? staffMember;
+    const clockingOut = Boolean(member.clockedIn);
     const actionAt = nowLabel();
     setStaffMembers((members) =>
-      members.map((member) =>
-        member.name === name && (!member.businessId || member.businessId === activeBusiness.id)
+      (members.some((item) => staffIdentityMatches(item, { email: member.email || member.phone, name, role: 'staff', businessId: activeBusiness.id }) && (!item.businessId || item.businessId === activeBusiness.id))
+        ? members
+        : [member, ...members]
+      ).map((item) =>
+        staffIdentityMatches(item, { email: member.email || member.phone, name, role: 'staff', businessId: activeBusiness.id }) && (!item.businessId || item.businessId === activeBusiness.id)
           ? {
-              ...member,
+              ...item,
               clockedIn: !member.clockedIn,
               clockInAt: member.clockedIn ? undefined : actionAt,
               hoursToday: member.clockedIn ? Math.max(member.hoursToday, 6.4) : member.hoursToday
             }
-          : member
+          : item
       )
     );
     const message = clockingOut ? `${name} clocked out at ${actionAt}` : `${name} clocked in at ${actionAt}`;
     setSmsNotice(message);
     showRosterToast(message);
-    if (member) {
-      persistStaffClock(member, activeBusiness.id, clockingOut).catch((error) => {
+    persistStaffClockThroughFunction(member, activeBusiness.id, clockingOut)
+      .catch(() => persistStaffClock(member, activeBusiness.id, clockingOut))
+      .catch((error) => {
         console.warn('[Staff clock] Persist clock event failed:', error);
       });
-    }
   }
 
   if (activeInviteToken) {
@@ -2573,7 +2820,7 @@ function App() {
             rosterShifts={activeRosterShifts.filter((shift) => rosterShiftBelongsToStaff(shift, currentStaffMember, authUser))}
             rosterToast={rosterToast}
             updateRosterResponse={updateRosterResponse}
-            toggleClock={() => toggleStaffClock(currentStaffMember.name)}
+            toggleClock={() => toggleStaffClock(currentStaffMember)}
           />
         )}
       </main>
@@ -4513,8 +4760,8 @@ function renderTemplatePreview(template: string) {
   return template.replace(/\{\{customer\}\}/g, 'Customer').replace(/\{\{business\}\}/g, 'Your Business');
 }
 
-function nowLabel() {
-  return new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
+function nowLabel(date: Date = new Date()) {
+  return date.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
 }
 
 function simpleStageLabel(status: JobStatus, workflowStages?: Record<JobStatus, WorkflowStage>) {

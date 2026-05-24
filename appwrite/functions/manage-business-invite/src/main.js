@@ -158,6 +158,41 @@ async function upsertInvite(databases, payload) {
   }
 }
 
+async function upsertOrganisation(databases, payload) {
+  const business = payload.businessDetails || payload.business || null;
+  if (!business && !payload.businessIndustry) return false;
+  const businessId = payload.businessId || business?.businessId;
+  if (!businessId) return false;
+  const sender = (business?.smsSenderName || payload.businessName || 'VEROLA').replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 10) || 'VEROLA';
+  const data = {
+    name: business?.name || payload.businessName,
+    industry: business?.industry || payload.businessIndustry || 'Service business',
+    location: business?.location || payload.businessLocation || 'New location',
+    isEnabled: business?.isEnabled ?? true,
+    plan: business?.plan || 'starter',
+    subscriptionStatus: business?.subscriptionStatus || 'trialing',
+    logoFileId: business?.logoFileId || '',
+    logoUrl: business?.logoUrl || payload.logoUrl || '',
+    logoName: business?.logoName || '',
+    primaryColour: business?.primaryColour || '#4f46e5',
+    accentColour: business?.accentColour || '#06b6d4',
+    messagingEnabled: business?.messagingEnabled ?? false,
+    smsProvider: business?.smsProvider || undefined,
+    smsSenderName: business?.smsSenderName || sender,
+    smsSetupStatus: business?.smsSetupStatus || 'not_configured',
+    adminEmail: business?.adminEmail || payload.adminEmail || '',
+    contactName: business?.contactName || payload.contactName || '',
+    contactPhone: business?.contactPhone || payload.phone || '',
+    teamId: business?.teamId || businessId,
+  };
+  try {
+    await databases.updateDocument(databaseId, organisationsCollectionId, businessId, data);
+  } catch {
+    await databases.createDocument(databaseId, organisationsCollectionId, businessId, data);
+  }
+  return true;
+}
+
 async function lookupInviteByToken(databases, token) {
   const hash = tokenHash(token);
   const result = await databases.listDocuments(databaseId, invitesCollectionId, [Query.equal('tokenHash', hash)]);
@@ -171,6 +206,19 @@ async function lookupInviteById(databases, inviteId) {
     const doc = await databases.getDocument(databaseId, invitesCollectionId, inviteId);
     return normalizeInviteDoc(doc, null);
   } catch { return null; }
+}
+
+async function listInvitesByOrg(databases, organisationId) {
+  const result = await databases.listDocuments(databaseId, invitesCollectionId, [
+    Query.equal('organisationId', organisationId),
+    Query.limit(100)
+  ]);
+  return result.documents.map((doc) => normalizeInviteDoc(doc, null));
+}
+
+async function listOrganisations(databases) {
+  const result = await databases.listDocuments(databaseId, organisationsCollectionId, [Query.limit(100)]);
+  return result.documents;
 }
 
 function normalizeInviteDoc(doc, rawToken) {
@@ -240,6 +288,59 @@ async function acceptInvite(databases, users, payload) {
   return { accepted: true, userId: user.$id, businessId: invite.businessId, businessName: invite.businessName, role: invite.role };
 }
 
+async function createClockEvent(databases, payload) {
+  const now = new Date();
+  const businessId = payload.businessId;
+  const staffUserId = payload.staffUserId;
+  const staffName = payload.staffName || staffUserId;
+  if (!businessId || !staffUserId) throw new Error('Missing staff clock fields.');
+  const clockingOut = Boolean(payload.clockingOut);
+  const hoursToday = Number(payload.hoursToday || 0);
+  const data = {
+    organisationId: businessId,
+    staffUserId,
+    staffName,
+    clockInAt: clockingOut ? new Date(Date.now() - Math.max(hoursToday, 0.1) * 60 * 60 * 1000).toISOString() : now.toISOString(),
+    clockOutAt: clockingOut ? now.toISOString() : undefined,
+    status: clockingOut ? 'clocked_out' : 'clocked_in',
+    totalMinutes: clockingOut ? Math.max(1, Math.round(Math.max(hoursToday, 0.1) * 60)) : undefined
+  };
+  const doc = await databases.createDocument(databaseId, 'staffShifts', ID.unique(), data);
+  return { saved: true, id: doc.$id };
+}
+
+async function listStaffClockStates(databases, businessId) {
+  const result = await databases.listDocuments(databaseId, 'staffShifts', [
+    Query.equal('organisationId', businessId),
+    Query.limit(100)
+  ]);
+  const latest = new Map();
+  for (const doc of result.documents) {
+    const previous = latest.get(doc.staffUserId);
+    const docTime = new Date(doc.$createdAt || doc.clockOutAt || doc.clockInAt).getTime();
+    const previousTime = previous ? new Date(previous.$createdAt || previous.clockOutAt || previous.clockInAt).getTime() : 0;
+    if (!previous || docTime >= previousTime) latest.set(doc.staffUserId, doc);
+  }
+  const states = Array.from(latest.values()).map((doc) => {
+    const clockIn = new Date(doc.clockInAt);
+    const clockOut = doc.clockOutAt ? new Date(doc.clockOutAt) : null;
+    const totalMinutes = doc.totalMinutes ?? (
+      clockOut
+        ? Math.max(1, Math.round((clockOut.getTime() - clockIn.getTime()) / 60000))
+        : Math.max(1, Math.round((Date.now() - clockIn.getTime()) / 60000))
+    );
+    return {
+      staffUserId: doc.staffUserId,
+      staffName: doc.staffName,
+      clockedIn: doc.status === 'clocked_in',
+      clockInAt: doc.clockInAt,
+      lastShift: doc.status === 'clocked_in' ? doc.clockInAt : (doc.clockOutAt || doc.clockInAt),
+      hoursToday: Math.round((totalMinutes / 60) * 10) / 10
+    };
+  });
+  return states;
+}
+
 export default async ({ req, res, log, error }) => {
   try {
     const payload = parseBody(req);
@@ -264,6 +365,7 @@ export default async ({ req, res, log, error }) => {
       } else {
         // 1. Store invite (best-effort; invite params also embedded in URL as fallback)
         try {
+          await upsertOrganisation(services.databases, payload);
           await upsertInvite(services.databases, payload);
           inviteStored = true;
         } catch (ex) {
@@ -328,10 +430,29 @@ export default async ({ req, res, log, error }) => {
       return json(res, { invite }, invite ? 200 : 404);
     }
 
+    if (action === 'list_invites_by_org') {
+      if (!services.configured) return json(res, { invites: [], error: services.error }, 503);
+      if (!payload.businessId) return json(res, { invites: [], error: 'Missing businessId.' }, 400);
+      const invites = await listInvitesByOrg(services.databases, payload.businessId);
+      return json(res, { invites });
+    }
+
+    if (action === 'list_organisations') {
+      if (!services.configured) return json(res, { organisations: [], error: services.error }, 503);
+      const organisations = await listOrganisations(services.databases);
+      return json(res, { organisations });
+    }
+
     if (action === 'accept_invite') {
       if (!services.configured) return json(res, { accepted: false, error: services.error }, 503);
       const result = await acceptInvite(services.databases, services.users, payload);
       return json(res, result);
+    }
+
+    if (action === 'save_organisation') {
+      if (!services.configured) return json(res, { saved: false, error: services.error }, 503);
+      const saved = await upsertOrganisation(services.databases, payload);
+      return json(res, { saved });
     }
 
     if (action === 'save_branding') {
@@ -362,6 +483,20 @@ export default async ({ req, res, log, error }) => {
       });
       log(`Branding logo removed for ${payload.businessId}`);
       return json(res, { removed: true });
+    }
+
+    if (action === 'staff_clock_event') {
+      if (!services.configured) return json(res, { saved: false, error: services.error }, 503);
+      const result = await createClockEvent(services.databases, payload);
+      log(`Staff clock event saved for ${payload.staffName || payload.staffUserId}`);
+      return json(res, result);
+    }
+
+    if (action === 'list_staff_clock') {
+      if (!services.configured) return json(res, { states: [], error: services.error }, 503);
+      if (!payload.businessId) return json(res, { states: [], error: 'Missing businessId.' }, 400);
+      const states = await listStaffClockStates(services.databases, payload.businessId);
+      return json(res, { states });
     }
 
     return json(res, { error: 'Unknown action.' }, 400);
