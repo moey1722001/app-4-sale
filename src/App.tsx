@@ -12,7 +12,6 @@ import {
   Clock3,
   CreditCard,
   History,
-  LockKeyhole,
   LogIn,
   LogOut,
   Mail,
@@ -35,6 +34,7 @@ import {
   appwriteClient,
   appwriteDatabaseId,
   appwriteInviteFunctionId,
+  appwriteSmsFunctionId,
   appwriteLogoBucketId,
   appwriteOrganisationCollectionId,
   account,
@@ -292,13 +292,13 @@ const portalPaths: Record<Portal, string> = {
   staff: '/staff'
 };
 
-const inviteStorageKey = 'verola.organisationInvites.v5';
-const businessStorageKey = 'verola.businesses.v5';
-const userStorageKey = 'verola.createdUsers.v5';
-const authStorageKey = 'verola.authUser.v5';
-const activeBusinessStorageKey = 'verola.activeBusinessId.v5';
-const jobsStorageKey = 'verola.jobs.v5';
-const rosterStorageKey = 'verola.rosters.v5';
+const inviteStorageKey = 'verola.organisationInvites.v6';
+const businessStorageKey = 'verola.businesses.v6';
+const userStorageKey = 'verola.createdUsers.v6';
+const authStorageKey = 'verola.authUser.v6';
+const activeBusinessStorageKey = 'verola.activeBusinessId.v6';
+const jobsStorageKey = 'verola.jobs.v6';
+const rosterStorageKey = 'verola.rosters.v6';
 const staffStorageKey = 'verola.staff.v2';
 const workflowStorageKey = 'verola.workflowStages.v2';
 const smsTemplateStorageKey = 'verola.smsTemplates.v2';
@@ -332,6 +332,86 @@ const defaultSmsTemplates: Record<JobStatus, string> = {
   ready_for_pickup: 'Hi {{customer}}, your order is ready for pickup at {{business}}.',
   completed: 'Thanks {{customer}}. Your order with {{business}} is complete.'
 };
+
+const industryPresets: Record<string, { label: string; stages: Record<JobStatus, WorkflowStage>; templates: Record<JobStatus, string> }> = {
+  laundromat: {
+    label: 'Laundromat / dry cleaner',
+    stages: {
+      collected: { label: 'Received', verb: 'Mark received', nextStep: 'Order added to queue', tone: 'blue' },
+      in_progress: { label: 'Washing', verb: 'Start work', nextStep: 'Staff processing order', tone: 'amber' },
+      ready_for_pickup: { label: 'Ready', verb: 'Ready for pickup', nextStep: 'Customer can collect', tone: 'green' },
+      completed: { label: 'Picked up', verb: 'Complete order', nextStep: 'Archived for the day', tone: 'slate' }
+    },
+    templates: {
+      collected: 'Hi {{customer}}, {{business}} has received your order. We will text you when it is underway.',
+      in_progress: 'Hi {{customer}}, your order at {{business}} is now being processed.',
+      ready_for_pickup: 'Hi {{customer}}, your order is ready for pickup at {{business}}.',
+      completed: 'Thanks {{customer}}. Your order has been picked up from {{business}}.'
+    }
+  },
+  mechanic: {
+    label: 'Mechanic / repair shop',
+    stages: {
+      collected: { label: 'Checked in', verb: 'Check in', nextStep: 'Vehicle or item received', tone: 'blue' },
+      in_progress: { label: 'Inspecting', verb: 'Start inspection', nextStep: 'Work or inspection underway', tone: 'amber' },
+      ready_for_pickup: { label: 'Ready', verb: 'Ready for pickup', nextStep: 'Customer can collect or approve', tone: 'green' },
+      completed: { label: 'Collected', verb: 'Complete job', nextStep: 'Job closed', tone: 'slate' }
+    },
+    templates: {
+      collected: 'Hi {{customer}}, {{business}} has checked in your job. We will keep you updated.',
+      in_progress: 'Hi {{customer}}, {{business}} has started work on your job.',
+      ready_for_pickup: 'Hi {{customer}}, your job is ready at {{business}}. Please contact us if you need anything before pickup.',
+      completed: 'Thanks {{customer}}. Your job with {{business}} is now complete.'
+    }
+  },
+  grooming: {
+    label: 'Grooming / beauty / appointments',
+    stages: {
+      collected: { label: 'Arrived', verb: 'Mark arrived', nextStep: 'Customer checked in', tone: 'blue' },
+      in_progress: { label: 'In service', verb: 'Start service', nextStep: 'Appointment underway', tone: 'amber' },
+      ready_for_pickup: { label: 'Ready', verb: 'Ready for pickup', nextStep: 'Customer can return', tone: 'green' },
+      completed: { label: 'Completed', verb: 'Complete visit', nextStep: 'Visit archived', tone: 'slate' }
+    },
+    templates: {
+      collected: 'Hi {{customer}}, you are checked in with {{business}}. We will keep you updated.',
+      in_progress: 'Hi {{customer}}, your service at {{business}} has started.',
+      ready_for_pickup: 'Hi {{customer}}, everything is ready at {{business}}.',
+      completed: 'Thanks {{customer}}. Your visit with {{business}} is complete.'
+    }
+  },
+  service: {
+    label: 'General service business',
+    stages: defaultWorkflowStages,
+    templates: defaultSmsTemplates
+  }
+};
+
+function cloneWorkflowStages(stages: Record<JobStatus, WorkflowStage>) {
+  return Object.fromEntries(statusFlow.map((status) => [status, { ...stages[status] }])) as Record<JobStatus, WorkflowStage>;
+}
+
+function cloneSmsTemplates(templates: Record<JobStatus, string>) {
+  return { ...templates };
+}
+
+function industryPresetKey(industry?: string) {
+  const value = (industry || '').toLowerCase();
+  if (/(laundry|laundromat|dry|cleaner|cleaning|tailor|alteration)/.test(value)) return 'laundromat';
+  if (/(mechanic|auto|vehicle|repair|detailing|panel|tyre|tire)/.test(value)) return 'mechanic';
+  if (/(groom|beauty|clinic|salon|appointment|barber)/.test(value)) return 'grooming';
+  return 'service';
+}
+
+function industryPresetFor(industry?: string) {
+  return industryPresets[industryPresetKey(industry)];
+}
+
+function greetingForNow() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
 
 function portalFromPath(pathname: string): Portal {
   if (pathname.startsWith('/super-admin')) return 'super';
@@ -970,9 +1050,11 @@ function App() {
   const loginBusinessByEmail = loginRole === 'admin' ? businesses.find((business) => business.adminEmail?.toLowerCase() === loginEmail.trim().toLowerCase()) : undefined;
   const loginBusiness = loginUser?.businessId ? businesses.find((business) => business.id === loginUser.businessId) : loginBusinessByEmail;
   const activeBrand = brandFromBusiness(activeBusiness);
-  const currentStaffMember = authUser?.role === 'staff'
-    ? activeStaffMembers.find((member) => staffIdentityMatches(member, authUser)) ?? staffMemberFromAuth(authUser, activeBusiness.id)
-    : activeStaffMembers.find((member) => member.role === 'Staff') ?? activeStaffMembers[0] ?? staffMemberFromAuth({ email: '', name: 'Staff member', role: 'staff', businessId: activeBusiness.id }, activeBusiness.id);
+  const currentStaffMember = useMemo(() => (
+    authUser?.role === 'staff'
+      ? activeStaffMembers.find((member) => staffIdentityMatches(member, authUser)) ?? staffMemberFromAuth(authUser, activeBusiness.id)
+      : activeStaffMembers.find((member) => member.role === 'Staff') ?? activeStaffMembers[0] ?? staffMemberFromAuth({ email: '', name: 'Staff member', role: 'staff', businessId: activeBusiness.id }, activeBusiness.id)
+  ), [activeBusiness.id, activeStaffMembers, authUser]);
   const loginBrand = loginRole === 'super' ? platformBrand : brandFromBusiness(loginBusiness);
   const canPreviewPortals = Boolean(authUser && (authUser.role === 'super' || import.meta.env.DEV || !hasAppwriteConfig));
   const visiblePortals = canPreviewPortals ? (Object.keys(portalMeta) as Portal[]) : authUser ? [authUser.role] : [];
@@ -1650,6 +1732,9 @@ function App() {
     if (business.adminEmail) {
       setOrganisationInvites((current) => [invite, ...current]);
     }
+    const preset = industryPresetFor(business.industry);
+    setWorkflowStages(cloneWorkflowStages(preset.stages));
+    setSmsTemplates(cloneSmsTemplates(preset.templates));
     debugInvite('invite token created', { token: invite.token, businessId: business.id, email: invite.adminEmail, expiresAt: invite.expiresAt });
     debugInvite('invite URL generated', { token: invite.token, url: buildInviteUrl(invite) });
     setActiveBusinessId(business.id);
@@ -1906,8 +1991,36 @@ function App() {
     setSmsNotice(`${providerName(masterSmsDraft.provider)} test passed. Save the provider to enable platform SMS.`);
   }
 
-  function sendTestSms() {
-    const connected = masterSmsSettings.status === 'connected';
+  async function sendTestSms() {
+    const connected = masterSmsSettings.status === 'connected' && Boolean(appwriteSmsFunctionId);
+    let providerResponse = connected ? 'Test SMS queued through master provider.' : 'Master SMS provider function is not configured.';
+    if (connected && appwriteSmsFunctionId) {
+      try {
+        const execution = await functions.createExecution(
+          appwriteSmsFunctionId,
+          JSON.stringify({
+            action: 'send_test_sms',
+            organisationId: activeBusiness.id,
+            businessName: activeBusiness.name,
+            provider: masterSmsSettings.provider,
+            senderName: masterSmsSettings.senderName
+          }),
+          false,
+          '/',
+          ExecutionMethod.POST,
+          { 'content-type': 'application/json' }
+        );
+        const result = execution as { responseStatusCode?: number; responseBody?: string };
+        const payload = result.responseBody ? JSON.parse(result.responseBody) as { ok?: boolean; status?: 'sent' | 'failed'; providerMessageId?: string; error?: string } : {};
+        if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.ok === false || payload.status === 'failed') {
+          throw new Error(payload.error || 'SMS function returned a failure.');
+        }
+        providerResponse = payload.providerMessageId ? `Queued by provider as ${payload.providerMessageId}` : 'Test SMS queued through master provider.';
+      } catch (error) {
+        providerResponse = error instanceof Error ? error.message : 'Test SMS failed.';
+      }
+    }
+    const sent = connected && !providerResponse.toLowerCase().includes('failed') && !providerResponse.toLowerCase().includes('not configured') && !providerResponse.toLowerCase().includes('error');
     setSmsLogs((logs) => [
       {
         id: `sms-${Date.now()}`,
@@ -1915,24 +2028,62 @@ function App() {
         businessName: activeBusiness.name,
         recipient: 'test recipient',
         templateKey: 'test',
-        status: connected ? 'sent' : 'failed',
+        status: sent ? 'sent' : 'failed',
         timestamp: 'Just now',
         provider: masterSmsSettings.provider,
-        response: connected ? 'Test SMS queued through master provider.' : 'Master SMS provider is not configured.'
+        response: providerResponse
       },
       ...logs
     ]);
-    setSmsNotice(connected ? 'Test SMS queued through the platform master provider.' : 'SMS unavailable. Contact the platform admin to configure the master provider.');
+    setSmsNotice(sent ? 'Test SMS queued through the platform master provider.' : 'SMS unavailable. Configure the secure Appwrite SMS function before sending customer messages.');
   }
 
-  function updateJobStatus(jobId: string, status: JobStatus) {
+  async function sendCustomerSms(job: Job, status: JobStatus, message: string) {
+    if (masterSmsSettings.status !== 'connected') {
+      return { sent: false, response: 'Master SMS provider is not connected.' };
+    }
+    if (!appwriteSmsFunctionId) {
+      return { sent: false, response: 'Secure SMS function is not configured.' };
+    }
+    try {
+      const execution = await functions.createExecution(
+        appwriteSmsFunctionId,
+        JSON.stringify({
+          action: 'send_sms',
+          organisationId: activeBusiness.id,
+          businessName: activeBusiness.name,
+          jobId: job.id,
+          customerName: job.customer,
+          phoneNumber: job.phone,
+          messageBody: message,
+          templateKey: status,
+          provider: masterSmsSettings.provider,
+          senderName: masterSmsSettings.senderName
+        }),
+        false,
+        '/',
+        ExecutionMethod.POST,
+        { 'content-type': 'application/json' }
+      );
+      const result = execution as { responseStatusCode?: number; responseBody?: string };
+      const payload = result.responseBody ? JSON.parse(result.responseBody) as { ok?: boolean; status?: 'sent' | 'failed'; providerMessageId?: string; error?: string } : {};
+      if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.ok === false || payload.status === 'failed') {
+        throw new Error(payload.error || 'SMS function returned a failure.');
+      }
+      return { sent: true, response: payload.providerMessageId ? `Provider message ${payload.providerMessageId}` : `Queued by ${masterSmsSettings.senderName || 'VEROLA'}` };
+    } catch (error) {
+      return { sent: false, response: error instanceof Error ? error.message : 'SMS function failed.' };
+    }
+  }
+
+  async function updateJobStatus(jobId: string, status: JobStatus) {
     const actionTime = nowLabel();
     const targetJob = jobs.find((item) => item.id === jobId);
     if (!targetJob) return;
     const message = smsTemplates[status]
       .replace('{{customer}}', targetJob.customer.split(' ')[0])
       .replace('{{business}}', activeBusiness.name);
-    const smsConnected = masterSmsSettings.status === 'connected';
+    const smsResult = await sendCustomerSms(targetJob, status, message);
 
     setJobs((currentJobs) =>
       currentJobs.map((job) => {
@@ -1945,8 +2096,8 @@ function App() {
             {
               status,
               at: actionTime,
-              kind: smsConnected ? 'sms' : 'sms_failed',
-              sms: smsConnected ? `Customer SMS sent: ${message}` : 'SMS failed. Status updated, but no customer message was sent.'
+              kind: smsResult.sent ? 'sms' : 'sms_failed',
+              sms: smsResult.sent ? `Customer SMS sent: ${message}` : `SMS failed. Status updated, but no customer message was sent. ${smsResult.response}`
             },
             ...job.updates
           ]
@@ -1954,38 +2105,24 @@ function App() {
       })
     );
 
-    if (smsConnected) {
-      setSmsLogs((logs) => [
-        {
-          id: `sms-${Date.now()}`,
-          businessId: activeBusiness.id,
-          businessName: activeBusiness.name,
-          recipient: targetJob.phone,
-          templateKey: status,
-          status: 'sent',
-          timestamp: actionTime,
-          provider: masterSmsSettings.provider,
-          response: `Queued by ${masterSmsSettings.senderName || 'VEROLA'}`
-        },
-        ...logs
-      ]);
+    setSmsLogs((logs) => [
+      {
+        id: `sms-${Date.now()}`,
+        businessId: activeBusiness.id,
+        businessName: activeBusiness.name,
+        recipient: targetJob.phone,
+        templateKey: status,
+        status: smsResult.sent ? 'sent' : 'failed',
+        timestamp: actionTime,
+        provider: masterSmsSettings.provider,
+        response: smsResult.response
+      },
+      ...logs
+    ]);
+    if (smsResult.sent) {
       setSmsNotice(status === 'completed' ? 'Order completed and saved.' : `Customer notified: ${targetJob.customer}.`);
       showWorkflowToast(status === 'completed' ? 'Order completed and saved' : 'Customer notified');
     } else {
-      setSmsLogs((logs) => [
-        {
-          id: `sms-${Date.now()}`,
-          businessId: activeBusiness.id,
-          businessName: activeBusiness.name,
-          recipient: targetJob.phone,
-          templateKey: status,
-          status: 'failed',
-          timestamp: actionTime,
-          provider: masterSmsSettings.provider,
-          response: 'SMS failed. Status was updated without a customer message.'
-        },
-        ...logs
-      ]);
       setSmsNotice(status === 'completed' ? 'Order completed and saved. SMS failed.' : 'SMS failed. Status updated, but no customer message was sent.');
       showWorkflowToast(status === 'completed' ? 'Order completed and saved' : 'SMS failed', status === 'completed' ? 'success' : 'warning');
     }
@@ -2169,7 +2306,7 @@ function App() {
   if (customerTrackJobId) {
     return (
       <BrandProvider brand={brandFromBusiness(customerTrackBusiness)}>
-        <CustomerStatusView job={customerTrackJob} business={customerTrackBusiness} />
+        <CustomerStatusView job={customerTrackJob} business={customerTrackBusiness} workflowStages={workflowStages} />
       </BrandProvider>
     );
   }
@@ -2244,10 +2381,6 @@ function App() {
             )}
           </div>
           <div className="topbar-actions">
-            <span className={hasAppwriteConfig ? 'config-pill ready' : 'config-pill'}>
-              <LockKeyhole size={15} />
-              {hasAppwriteConfig ? 'Appwrite connected' : 'Local mode'}
-            </span>
             <button className="icon-button" aria-label="Notifications" aria-expanded={showNotifications} onClick={() => setShowNotifications((open) => !open)}>
               <Bell size={19} />
             </button>
@@ -2332,6 +2465,12 @@ function App() {
             toggleJobPaid={toggleJobPaid}
             workflowStages={workflowStages}
             setWorkflowStage={(status, patch) => setWorkflowStages((stages) => ({ ...stages, [status]: { ...stages[status], ...patch } }))}
+            applyIndustryPreset={() => {
+              const preset = industryPresetFor(activeBusiness.industry);
+              setWorkflowStages(cloneWorkflowStages(preset.stages));
+              setSmsTemplates(cloneSmsTemplates(preset.templates));
+              setSmsNotice(`${preset.label} workflow and SMS templates applied for ${activeBusiness.name}.`);
+            }}
             smsNotice={smsNotice}
             workflowToast={workflowToast}
             masterSmsSettings={masterSmsSettings}
@@ -2367,10 +2506,10 @@ function App() {
 
         {portal === 'staff' && (
           <StaffView
+            business={activeBusiness}
             jobs={visibleJobs}
             selectedJob={selectedJob}
             setSelectedJobId={setSelectedJobId}
-            addJobNote={addJobNote}
             toggleJobPaid={toggleJobPaid}
             workflowStages={workflowStages}
             query={query}
@@ -2584,6 +2723,10 @@ function SuperAdminView({
               </div>
               <button>Primary action</button>
             </div>
+            <div className="preview-actions">
+              <a href="/business-admin">Preview admin</a>
+              <a href="/staff">Preview staff</a>
+            </div>
           </section>
 
           <section className="panel selected-invite-card">
@@ -2709,9 +2852,9 @@ function LoginView({
         </div>
         {error && <p className="login-error">{error}</p>}
         <div className="login-help">
-          <strong>Use your assigned Verola account</strong>
-          <span>Super Admin: moey1722001@gmail.com</span>
-          <span>Business admins and staff sign in after accepting an invite.</span>
+          <strong>Use your Verola account</strong>
+          <span>Business admins and staff sign in after accepting their invite.</span>
+          <span>Each login only opens the dashboard assigned to that account.</span>
         </div>
         <a className="login-link" href="/overview">View product overview</a>
       </section>
@@ -2872,31 +3015,49 @@ function InviteAcceptView({
   );
 }
 
-function CustomerStatusView({ job, business }: { job?: Job; business?: Business }) {
-  const brand = useBranding();
+function CustomerStatusView({ job, business, workflowStages }: { job?: Job; business?: Business; workflowStages: Record<JobStatus, WorkflowStage> }) {
+  const fallbackBrand = useBranding();
+  const brand = business ? brandFromBusiness(business) : fallbackBrand;
+  const currentIndex = job ? statusFlow.indexOf(job.status) : -1;
 
   return (
     <main className="login-screen customer-status-screen" style={{ '--brand': brand.primary, '--accent': brand.accent } as React.CSSProperties}>
-      <section className="login-panel customer-status-card">
+      <section className="login-panel customer-status-card branded-status-card">
         <div className="brand-lockup login-brand">
-          <BrandMark className="login-logo" />
+          {business ? <BusinessLogo business={business} className="login-logo" /> : <BrandMark className="login-logo" />}
           <div>
             <strong>{brand.name}</strong>
-            <span>{business ? `${business.industry} updates` : 'Customer update'}</span>
+            <span>{business ? `${business.industry} updates` : 'Customer update'} · Powered by Verola</span>
           </div>
         </div>
         {job && business ? (
           <>
-            <div>
-              <span className="eyebrow">Job status</span>
-              <h1>{job.customer}</h1>
-              <p className="login-copy">{job.item}</p>
+            <div className="customer-status-hero">
+              <span className="eyebrow">Live order status</span>
+              <h1>{workflowStages[job.status].label}</h1>
+              <p>{job.item}</p>
             </div>
-            <div className="login-help">
-              <strong>{business.name}</strong>
-              <span>Status: {defaultWorkflowStages[job.status].label}</span>
-              <span>Payment: {job.paid ? 'Paid' : 'Not paid yet'}</span>
-              <span>Due: {job.due}</span>
+            <div className="customer-progress-line" aria-label="Order progress">
+              {statusFlow.map((status, index) => (
+                <div className={index <= currentIndex ? 'customer-progress-step done' : 'customer-progress-step'} key={status}>
+                  <span>{index + 1}</span>
+                  <strong>{workflowStages[status].label}</strong>
+                </div>
+              ))}
+            </div>
+            <div className="customer-status-summary">
+              <div>
+                <span>Customer</span>
+                <strong>{job.customer}</strong>
+              </div>
+              <div>
+                <span>Payment</span>
+                <strong>{job.paid ? 'Paid' : 'Not paid yet'}</strong>
+              </div>
+              <div>
+                <span>Last update</span>
+                <strong>{job.updates[0]?.at || 'Just now'}</strong>
+              </div>
             </div>
             <p className="powered-by">Powered by {brand.poweredBy}</p>
           </>
@@ -2949,6 +3110,7 @@ function BusinessAdminView(props: {
   toggleJobPaid: (jobId: string) => void;
   workflowStages: Record<JobStatus, WorkflowStage>;
   setWorkflowStage: (status: JobStatus, patch: Partial<WorkflowStage>) => void;
+  applyIndustryPreset: () => void;
   smsNotice: string;
   workflowToast: WorkflowToast | null;
   masterSmsSettings: MasterSmsSettings;
@@ -2985,6 +3147,8 @@ function BusinessAdminView(props: {
   const activeJobs = props.jobs.filter((job) => job.status !== 'completed');
   const completedJobs = props.jobs.filter((job) => job.status === 'completed');
   const readyJobs = activeJobs.filter((job) => job.status === 'ready_for_pickup').length;
+  const onShiftCount = props.staff.filter((member) => member.clockedIn).length;
+  const industryPreset = industryPresetFor(props.business.industry);
   const visibleHistoryJobs = props.jobs;
   const visibleJobsForView = jobsView === 'active' ? activeJobs : jobsView === 'completed' ? completedJobs : visibleHistoryJobs;
   const operationalSelectedJob = visibleJobsForView.find((job) => job.id === props.selectedJob?.id);
@@ -2995,16 +3159,21 @@ function BusinessAdminView(props: {
 
   return (
     <div className="business-admin-layout">
-      <section className="business-command">
-        <div>
-          <span className="eyebrow">{props.business.name}</span>
-          <h2>Jobs dashboard</h2>
-          <p>Active jobs show Received, In Progress, and Ready. Completed jobs move to Today's Completed automatically.</p>
+      <section className="business-command branded-daily-command">
+        <div className="daily-command-main">
+          <BusinessLogo business={props.business} className="daily-command-logo" />
+          <div>
+            <span className="eyebrow">{greetingForNow()}</span>
+            <h2>Today at {props.business.name}</h2>
+            <p>{activeJobs.length ? `${activeJobs.length} active jobs in the queue. ${readyJobs} ready for pickup.` : 'A clean workspace for today’s jobs.'}</p>
+            <small className="powered-by-inline">Powered by Verola</small>
+          </div>
         </div>
-        <div className="command-stats stats-3">
-          <div><strong>{activeJobs.length}</strong><span>Active</span></div>
+        <div className="command-stats stats-4">
+          <div><strong>{activeJobs.length}</strong><span>Active jobs</span></div>
           <div><strong>{readyJobs}</strong><span>Ready</span></div>
-          <div><strong>{completedJobs.length}</strong><span>Completed</span></div>
+          <div><strong>{onShiftCount}</strong><span>On shift</span></div>
+          <div><strong>{props.masterSmsSettings.status === 'connected' && appwriteSmsFunctionId ? 'On' : 'Off'}</strong><span>SMS</span></div>
         </div>
       </section>
 
@@ -3081,11 +3250,18 @@ function BusinessAdminView(props: {
         <details className="panel admin-drawer">
           <summary><Settings size={18} /> Workflow stages <span>4 automated stages</span></summary>
           <p className="workflow-editor-note">These stages control the internal order flow. Customer text is controlled separately in Messaging templates.</p>
+          <div className="preset-banner">
+            <div>
+              <strong>{industryPreset.label}</strong>
+              <span>Apply a clean workflow and SMS wording for {props.business.industry || 'this business'}.</span>
+            </div>
+            <button type="button" onClick={props.applyIndustryPreset}>Apply preset</button>
+          </div>
           <WorkflowStageEditor stages={props.workflowStages} setStage={props.setWorkflowStage} />
         </details>
 
         <details className="panel admin-drawer">
-          <summary><MessageSquareText size={18} /> Messaging <span>{props.masterSmsSettings.status === 'connected' ? 'SMS active' : 'SMS unavailable'}</span></summary>
+          <summary><MessageSquareText size={18} /> Messaging <span>{props.masterSmsSettings.status === 'connected' && appwriteSmsFunctionId ? 'SMS active' : 'SMS unavailable'}</span></summary>
           <BusinessSmsStatus settings={props.masterSmsSettings} notice={props.smsNotice} sendTestSms={props.sendTestSms} logs={props.smsLogs} />
           <SmsTemplateEditor templates={props.smsTemplates} setTemplate={props.setSmsTemplate} workflowStages={props.workflowStages} />
         </details>
@@ -3184,10 +3360,10 @@ function StaffInvitePanel({
 }
 
 function StaffView(props: {
+  business: Business;
   jobs: Job[];
   selectedJob?: Job;
   setSelectedJobId: (id: string) => void;
-  addJobNote: (jobId: string, note: string) => void;
   toggleJobPaid: (jobId: string) => void;
   workflowStages: Record<JobStatus, WorkflowStage>;
   query: string;
@@ -3206,10 +3382,14 @@ function StaffView(props: {
   return (
     <div className="staff-layout">
       <section className="shift-hero">
-        <div>
-          <span className="eyebrow">Shift clock</span>
-          <h2>{props.staffMember.clockedIn ? 'You are clocked in' : 'Ready to start your shift?'}</h2>
-          <p>{props.staffMember.clockedIn ? `Started ${props.staffMember.clockInAt} · ${props.staffMember.hoursToday.toFixed(1)}h today` : `Last shift ${props.staffMember.lastShift}`}</p>
+        <div className="staff-shift-intro">
+          <BusinessLogo business={props.business} className="staff-shift-logo" />
+          <div>
+            <span className="eyebrow">Hi {props.staffMember.name.split(' ')[0] || 'there'}</span>
+            <h2>{props.staffMember.clockedIn ? `You're working with ${props.business.name}` : `Ready for ${props.business.name}?`}</h2>
+            <p>{props.staffMember.clockedIn ? `Started ${props.staffMember.clockInAt} · ${props.staffMember.hoursToday.toFixed(1)}h today` : `Last shift ${props.staffMember.lastShift}`}</p>
+            <small className="powered-by-inline">Powered by Verola</small>
+          </div>
         </div>
         <button className={props.staffMember.clockedIn ? 'clock-action clock-out' : 'clock-action'} onClick={props.toggleClock}>
           {props.staffMember.clockedIn ? <LogOut size={20} /> : <LogIn size={20} />}
@@ -3228,7 +3408,6 @@ function StaffView(props: {
           <StaffJobReadOnlyDetail
             job={staffSelectedJob}
             workflowStages={props.workflowStages}
-            addJobNote={props.addJobNote}
           />
         </div>
       </section>
@@ -3291,14 +3470,11 @@ function StaffJobList({
 
 function StaffJobReadOnlyDetail({
   job,
-  workflowStages,
-  addJobNote
+  workflowStages
 }: {
   job?: Job;
   workflowStages: Record<JobStatus, WorkflowStage>;
-  addJobNote: (jobId: string, note: string) => void;
 }) {
-  const [draftNote, setDraftNote] = useState('');
   if (!job) {
     return (
       <aside className="staff-job-detail empty">
@@ -3340,19 +3516,6 @@ function StaffJobReadOnlyDetail({
         {job.notes.split('\n').map((line, index) => (
           <p key={`${line}-${index}`}>{line}</p>
         ))}
-      </div>
-      <div className="note-composer">
-        <textarea value={draftNote} onChange={(event) => setDraftNote(event.target.value)} placeholder="Add a handover note..." rows={3} />
-        <button
-          disabled={!draftNote.trim()}
-          onClick={() => {
-            addJobNote(job.id, draftNote);
-            setDraftNote('');
-          }}
-        >
-          <Plus size={16} />
-          Add note
-        </button>
       </div>
     </aside>
   );
@@ -4137,7 +4300,7 @@ function StaffShiftOverview({ staff, removeStaffMember }: { staff: StaffMember[]
 }
 
 function BusinessSmsStatus({ settings, notice, sendTestSms, logs }: { settings: MasterSmsSettings; notice: string; sendTestSms: () => void; logs: SmsLog[] }) {
-  const connected = settings.status === 'connected';
+  const connected = settings.status === 'connected' && Boolean(appwriteSmsFunctionId);
   const lastSent = logs[0];
   return (
     <div className="business-messaging">
@@ -4639,13 +4802,15 @@ function BrandMark({ className = '' }: { className?: string }) {
 
 function BusinessLogo({ business, className = '' }: { business: Business; className?: string }) {
   const initials = business.name.split(' ').map((word) => word[0]).join('').slice(0, 2) || 'V';
-  const logoUrl = business.logoUrl;
+  const logoUrl = business.logoUrl || platformBrand.logoUrl;
+  const iconUrl = business.logoUrl || platformBrand.appIconUrl;
 
   if (logoUrl) {
     return (
       <div className={`business-logo image-logo ${className}`} style={{ '--brand': business.primary, '--accent': business.accent } as React.CSSProperties}>
         <span>{initials}</span>
         <img className="logo-wordmark" src={logoUrl} alt={`${business.name} logo`} onError={(event) => { event.currentTarget.style.display = 'none'; }} />
+        {iconUrl && <img className="logo-icon" src={iconUrl} alt="" aria-hidden="true" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
       </div>
     );
   }

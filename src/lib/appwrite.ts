@@ -13,6 +13,7 @@ const configuredInviteFunctionId = import.meta.env.VITE_APPWRITE_INVITE_FUNCTION
 export const appwriteInviteFunctionId = configuredInviteFunctionId === '6a0f5ee79aa7bce5c892'
   ? '6a0f5ee400325b40b2e9'
   : configuredInviteFunctionId;
+export const appwriteSmsFunctionId = import.meta.env.VITE_APPWRITE_SMS_FUNCTION_ID as string | undefined;
 export const appwriteLogoBucketId = import.meta.env.VITE_APPWRITE_LOGO_BUCKET_ID as string | undefined;
 export const appBaseUrl = (import.meta.env.VITE_APP_URL as string | undefined)?.replace(/\/$/, '');
 

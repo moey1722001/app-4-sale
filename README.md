@@ -42,6 +42,7 @@ VITE_APPWRITE_PROJECT_ID=your-project-id
 VITE_APPWRITE_DATABASE_ID=verola
 VITE_APPWRITE_ORGANISATION_COLLECTION_ID=organisations
 VITE_APPWRITE_INVITE_FUNCTION_ID=send-company-invite-function-id
+VITE_APPWRITE_SMS_FUNCTION_ID=send-sms-function-id
 VITE_APP_URL=https://your-verola-domain.com
 VITE_APPWRITE_LOGO_BUCKET_ID=organisation-logos
 ```
@@ -65,6 +66,7 @@ Invite emails:
 - For production, deploy an Appwrite Function that creates, looks up, sends, and accepts invites. Set `VITE_APPWRITE_INVITE_FUNCTION_ID` to that function ID.
 - If email sending is not configured, the UI shows: "Email sending is not configured. Copy and send the invite link manually."
 - The frontend sends only invite metadata, the generated token, and the invite URL to the function. Email provider secrets and Appwrite server keys must stay inside Appwrite Function environment variables.
+- Customer SMS sends require `VITE_APPWRITE_SMS_FUNCTION_ID`. If the secure SMS function is missing or returns an error, Verola still updates the order status but records the SMS as failed.
 
 ## Platform SMS flow
 
