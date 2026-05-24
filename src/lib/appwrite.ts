@@ -7,7 +7,7 @@ const APPWRITE_PROJECT_ID = '6a0ae5450036ec146492';
 const endpoint = (import.meta.env.VITE_APPWRITE_ENDPOINT as string | undefined) || APPWRITE_ENDPOINT;
 const projectId = (import.meta.env.VITE_APPWRITE_PROJECT_ID as string | undefined) || APPWRITE_PROJECT_ID;
 
-export const appwriteDatabaseId = (import.meta.env.VITE_APPWRITE_DATABASE_ID as string | undefined) || 'verola';
+export const appwriteDatabaseId = (import.meta.env.VITE_APPWRITE_DATABASE_ID as string | undefined) || 'app4sale';
 export const appwriteOrganisationCollectionId = (import.meta.env.VITE_APPWRITE_ORGANISATION_COLLECTION_ID as string | undefined) || 'organisations';
 const configuredInviteFunctionId = import.meta.env.VITE_APPWRITE_INVITE_FUNCTION_ID as string | undefined;
 export const appwriteInviteFunctionId = configuredInviteFunctionId === '6a0f5ee79aa7bce5c892'

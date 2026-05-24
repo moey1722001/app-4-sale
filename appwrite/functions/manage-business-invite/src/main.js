@@ -1,7 +1,7 @@
 import { Account, Client, Databases, ID, Query, Users } from 'node-appwrite';
 import crypto from 'node:crypto';
 
-const databaseId = process.env.APPWRITE_DATABASE_ID || 'verola';
+const databaseId = process.env.APPWRITE_DATABASE_ID || 'app4sale';
 const invitesCollectionId = process.env.APPWRITE_INVITES_COLLECTION_ID || 'organisationInvites';
 const organisationsCollectionId = process.env.APPWRITE_ORGANISATIONS_COLLECTION_ID || 'organisations';
 const logoBucketId = process.env.APPWRITE_LOGO_BUCKET_ID || 'organisation-logos';
@@ -339,6 +339,59 @@ async function createClockEvent(databases, payload) {
   return { saved: true, id: doc.$id };
 }
 
+function rosterShiftFromDoc(doc) {
+  return {
+    id: doc.$id,
+    businessId: doc.organisationId,
+    staffUserId: doc.staffUserId || '',
+    staffName: doc.staffName,
+    role: doc.role || 'Staff',
+    date: doc.shiftDate,
+    start: doc.startTime,
+    end: doc.endTime,
+    area: doc.area || 'General',
+    response: doc.responseStatus || 'sent',
+    sentAt: doc.$createdAt || '',
+    respondedAt: doc.respondedAt || undefined,
+  };
+}
+
+async function upsertRosterShift(databases, payload) {
+  const shift = payload.shift || {};
+  const shiftId = shift.$id || shift.id;
+  if (!shiftId || !shift.organisationId || !shift.staffName || !shift.shiftDate) {
+    throw new Error('Missing roster shift fields.');
+  }
+  const data = {
+    organisationId: shift.organisationId,
+    staffUserId: shift.staffUserId || '',
+    staffName: shift.staffName,
+    role: shift.role || 'Staff',
+    shiftDate: shift.shiftDate,
+    startTime: shift.startTime || '',
+    endTime: shift.endTime || '',
+    area: shift.area || 'General',
+    responseStatus: shift.responseStatus || 'sent',
+    respondedAt: shift.respondedAt || undefined,
+    createdBy: shift.createdBy || payload.createdBy || undefined,
+  };
+  let doc;
+  try {
+    doc = await databases.updateDocument(databaseId, 'rosterShifts', shiftId, data);
+  } catch {
+    doc = await databases.createDocument(databaseId, 'rosterShifts', shiftId, data);
+  }
+  return { saved: true, shift: rosterShiftFromDoc(doc) };
+}
+
+async function listRosterShifts(databases, businessId) {
+  const result = await databases.listDocuments(databaseId, 'rosterShifts', [
+    Query.equal('organisationId', businessId),
+    Query.limit(200)
+  ]);
+  return result.documents.map(rosterShiftFromDoc);
+}
+
 async function listStaffClockStates(databases, businessId) {
   const result = await databases.listDocuments(databaseId, 'staffShifts', [
     Query.equal('organisationId', businessId),
@@ -520,6 +573,20 @@ export default async ({ req, res, log, error }) => {
       const result = await createClockEvent(services.databases, payload);
       log(`Staff clock event saved for ${payload.staffName || payload.staffUserId}`);
       return json(res, result);
+    }
+
+    if (action === 'update_roster_shift') {
+      if (!services.configured) return json(res, { saved: false, error: services.error }, 503);
+      const result = await upsertRosterShift(services.databases, payload);
+      log(`Roster shift saved for ${result.shift.staffName}`);
+      return json(res, result);
+    }
+
+    if (action === 'list_roster_shifts') {
+      if (!services.configured) return json(res, { shifts: [], error: services.error }, 503);
+      if (!payload.businessId) return json(res, { shifts: [], error: 'Missing businessId.' }, 400);
+      const shifts = await listRosterShifts(services.databases, payload.businessId);
+      return json(res, { shifts });
     }
 
     if (action === 'list_staff_clock') {

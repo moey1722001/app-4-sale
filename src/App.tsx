@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExecutionMethod } from 'appwrite';
 import {
   Activity,
@@ -345,9 +345,17 @@ const defaultSmsTemplates: Record<JobStatus, string> = {
   completed: 'Thanks {{customer}}. Your order with {{business}} is complete.'
 };
 
-const industryPresets: Record<string, { label: string; stages: Record<JobStatus, WorkflowStage>; templates: Record<JobStatus, string> }> = {
+type IndustryPreset = {
+  label: string;
+  description: string;
+  stages: Record<JobStatus, WorkflowStage>;
+  templates: Record<JobStatus, string>;
+};
+
+const industryPresets: Record<string, IndustryPreset> = {
   laundromat: {
     label: 'Laundromat / dry cleaner',
+    description: 'Drop-off orders, washing/cleaning, pickup notifications.',
     stages: {
       collected: { label: 'Received', verb: 'Mark received', nextStep: 'Order added to queue', tone: 'blue' },
       in_progress: { label: 'Washing', verb: 'Start work', nextStep: 'Staff processing order', tone: 'amber' },
@@ -363,6 +371,7 @@ const industryPresets: Record<string, { label: string; stages: Record<JobStatus,
   },
   mechanic: {
     label: 'Mechanic / repair shop',
+    description: 'Vehicles, inspections, repairs, approval and pickup flow.',
     stages: {
       collected: { label: 'Checked in', verb: 'Check in', nextStep: 'Vehicle or item received', tone: 'blue' },
       in_progress: { label: 'Inspecting', verb: 'Start inspection', nextStep: 'Work or inspection underway', tone: 'amber' },
@@ -376,27 +385,95 @@ const industryPresets: Record<string, { label: string; stages: Record<JobStatus,
       completed: 'Thanks {{customer}}. Your job with {{business}} is now complete.'
     }
   },
-  grooming: {
-    label: 'Grooming / beauty / appointments',
+  vet: {
+    label: 'Vet clinic',
+    description: 'Pet check-in, treatment progress, discharge and pickup.',
     stages: {
-      collected: { label: 'Arrived', verb: 'Mark arrived', nextStep: 'Customer checked in', tone: 'blue' },
-      in_progress: { label: 'In service', verb: 'Start service', nextStep: 'Appointment underway', tone: 'amber' },
-      ready_for_pickup: { label: 'Ready', verb: 'Ready for pickup', nextStep: 'Customer can return', tone: 'green' },
+      collected: { label: 'Checked in', verb: 'Check in pet', nextStep: 'Pet is with the clinic team', tone: 'blue' },
+      in_progress: { label: 'With vet', verb: 'Start consult', nextStep: 'Vet team is treating or assessing', tone: 'amber' },
+      ready_for_pickup: { label: 'Ready for pickup', verb: 'Ready for pickup', nextStep: 'Owner can collect pet', tone: 'green' },
+      completed: { label: 'Discharged', verb: 'Discharge pet', nextStep: 'Visit archived', tone: 'slate' }
+    },
+    templates: {
+      collected: 'Hi {{customer}}, your pet has been checked in at {{business}}. We will keep you updated.',
+      in_progress: 'Hi {{customer}}, your pet is now with the team at {{business}}.',
+      ready_for_pickup: 'Hi {{customer}}, your pet is ready for pickup at {{business}}.',
+      completed: 'Thanks {{customer}}. Your visit with {{business}} is now complete.'
+    }
+  },
+  grooming: {
+    label: 'Pet groomer',
+    description: 'Pet arrival, grooming underway, ready for pickup.',
+    stages: {
+      collected: { label: 'Arrived', verb: 'Pet arrived', nextStep: 'Pet checked in for grooming', tone: 'blue' },
+      in_progress: { label: 'Grooming', verb: 'Start grooming', nextStep: 'Grooming is underway', tone: 'amber' },
+      ready_for_pickup: { label: 'Ready', verb: 'Ready for pickup', nextStep: 'Owner can return', tone: 'green' },
+      completed: { label: 'Picked up', verb: 'Complete visit', nextStep: 'Visit archived', tone: 'slate' }
+    },
+    templates: {
+      collected: 'Hi {{customer}}, your pet has arrived at {{business}}. We will text when grooming starts.',
+      in_progress: 'Hi {{customer}}, grooming has started at {{business}}.',
+      ready_for_pickup: 'Hi {{customer}}, your pet is ready for pickup at {{business}}.',
+      completed: 'Thanks {{customer}}. Your grooming visit with {{business}} is complete.'
+    }
+  },
+  beauty: {
+    label: 'Beauty / clinic',
+    description: 'Client arrival, service progress, ready and completed visits.',
+    stages: {
+      collected: { label: 'Arrived', verb: 'Mark arrived', nextStep: 'Client checked in', tone: 'blue' },
+      in_progress: { label: 'In service', verb: 'Start service', nextStep: 'Treatment or appointment underway', tone: 'amber' },
+      ready_for_pickup: { label: 'Ready', verb: 'Ready / wrap up', nextStep: 'Client can finalise visit', tone: 'green' },
       completed: { label: 'Completed', verb: 'Complete visit', nextStep: 'Visit archived', tone: 'slate' }
     },
     templates: {
-      collected: 'Hi {{customer}}, you are checked in with {{business}}. We will keep you updated.',
-      in_progress: 'Hi {{customer}}, your service at {{business}} has started.',
-      ready_for_pickup: 'Hi {{customer}}, everything is ready at {{business}}.',
+      collected: 'Hi {{customer}}, you are checked in at {{business}}.',
+      in_progress: 'Hi {{customer}}, your appointment at {{business}} has started.',
+      ready_for_pickup: 'Hi {{customer}}, your appointment at {{business}} is wrapping up now.',
       completed: 'Thanks {{customer}}. Your visit with {{business}} is complete.'
+    }
+  },
+  tailoring: {
+    label: 'Tailoring / alterations',
+    description: 'Garment drop-offs, alteration work, fitting and collection.',
+    stages: {
+      collected: { label: 'Received', verb: 'Receive garment', nextStep: 'Garment added to queue', tone: 'blue' },
+      in_progress: { label: 'Altering', verb: 'Start alteration', nextStep: 'Tailor is working on garment', tone: 'amber' },
+      ready_for_pickup: { label: 'Ready', verb: 'Ready for fitting', nextStep: 'Customer can collect or fit', tone: 'green' },
+      completed: { label: 'Collected', verb: 'Complete order', nextStep: 'Order archived', tone: 'slate' }
+    },
+    templates: {
+      collected: 'Hi {{customer}}, {{business}} has received your garment for alteration.',
+      in_progress: 'Hi {{customer}}, your alteration is now underway at {{business}}.',
+      ready_for_pickup: 'Hi {{customer}}, your garment is ready at {{business}}.',
+      completed: 'Thanks {{customer}}. Your alteration order with {{business}} is complete.'
+    }
+  },
+  repair: {
+    label: 'General repair shop',
+    description: 'Device/item check-in, repair progress, pickup and close-out.',
+    stages: {
+      collected: { label: 'Checked in', verb: 'Check in item', nextStep: 'Item received by team', tone: 'blue' },
+      in_progress: { label: 'Repairing', verb: 'Start repair', nextStep: 'Repair is underway', tone: 'amber' },
+      ready_for_pickup: { label: 'Ready', verb: 'Ready for pickup', nextStep: 'Customer can collect item', tone: 'green' },
+      completed: { label: 'Collected', verb: 'Complete repair', nextStep: 'Job archived', tone: 'slate' }
+    },
+    templates: {
+      collected: 'Hi {{customer}}, {{business}} has checked in your item for repair.',
+      in_progress: 'Hi {{customer}}, your repair is now underway at {{business}}.',
+      ready_for_pickup: 'Hi {{customer}}, your item is ready for pickup at {{business}}.',
+      completed: 'Thanks {{customer}}. Your repair with {{business}} is complete.'
     }
   },
   service: {
     label: 'General service business',
+    description: 'Simple received, in progress, ready and completed workflow.',
     stages: defaultWorkflowStages,
     templates: defaultSmsTemplates
   }
 };
+
+const industryPresetOptions = ['laundromat', 'mechanic', 'vet', 'grooming', 'beauty', 'tailoring', 'repair', 'service'];
 
 function cloneWorkflowStages(stages: Record<JobStatus, WorkflowStage>) {
   return Object.fromEntries(statusFlow.map((status) => [status, { ...stages[status] }])) as Record<JobStatus, WorkflowStage>;
@@ -408,9 +485,13 @@ function cloneSmsTemplates(templates: Record<JobStatus, string>) {
 
 function industryPresetKey(industry?: string) {
   const value = (industry || '').toLowerCase();
-  if (/(laundry|laundromat|dry|cleaner|cleaning|tailor|alteration)/.test(value)) return 'laundromat';
-  if (/(mechanic|auto|vehicle|repair|detailing|panel|tyre|tire)/.test(value)) return 'mechanic';
-  if (/(groom|beauty|clinic|salon|appointment|barber)/.test(value)) return 'grooming';
+  if (/(laundry|laundromat|dry cleaner|drycleaner|wash|fold)/.test(value)) return 'laundromat';
+  if (/(vet|veterinary|animal|pet clinic)/.test(value)) return 'vet';
+  if (/(groom|pet groom|dog wash)/.test(value)) return 'grooming';
+  if (/(beauty|clinic|salon|appointment|barber|skin|cosmetic)/.test(value)) return 'beauty';
+  if (/(tailor|alteration|garment|clothing)/.test(value)) return 'tailoring';
+  if (/(mechanic|auto|vehicle|detailing|panel|tyre|tire)/.test(value)) return 'mechanic';
+  if (/(phone|device|computer|appliance|repair)/.test(value)) return 'repair';
   return 'service';
 }
 
@@ -795,6 +876,24 @@ async function fetchPersistedRosterShifts(businessId: string) {
   return response.documents.map((document) => rosterShiftFromDocument(document as unknown as RosterShiftDocument));
 }
 
+async function fetchRosterShiftsThroughFunction(businessId: string) {
+  if (!hasAppwriteConfig || !appwriteInviteFunctionId) return [];
+  const execution = await functions.createExecution(
+    appwriteInviteFunctionId,
+    JSON.stringify({ action: 'list_roster_shifts', businessId }),
+    false,
+    '/',
+    ExecutionMethod.POST,
+    { 'content-type': 'application/json' }
+  );
+  const result = execution as { responseStatusCode?: number; responseBody?: string };
+  const payload = result.responseBody ? JSON.parse(result.responseBody) as { shifts?: RosterShift[]; error?: string } : {};
+  if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error) {
+    throw new Error(payload.error || 'Roster lookup failed.');
+  }
+  return payload.shifts || [];
+}
+
 async function persistRosterShift(shift: RosterShift, createdBy?: string) {
   if (!hasAppwriteConfig || !appwriteDatabaseId) return false;
   const payload = rosterShiftPayload(shift, createdBy);
@@ -809,6 +908,27 @@ async function persistRosterShift(shift: RosterShift, createdBy?: string) {
 async function patchRosterShift(shift: RosterShift) {
   if (!hasAppwriteConfig || !appwriteDatabaseId) return false;
   await databases.updateDocument(appwriteDatabaseId, 'rosterShifts', shift.id, rosterShiftPayload(shift));
+  return true;
+}
+
+async function patchRosterShiftThroughFunction(shift: RosterShift) {
+  if (!hasAppwriteConfig || !appwriteInviteFunctionId) return false;
+  const execution = await functions.createExecution(
+    appwriteInviteFunctionId,
+    JSON.stringify({
+      action: 'update_roster_shift',
+      shift: { id: shift.id, ...rosterShiftPayload(shift) }
+    }),
+    false,
+    '/',
+    ExecutionMethod.POST,
+    { 'content-type': 'application/json' }
+  );
+  const result = execution as { responseStatusCode?: number; responseBody?: string };
+  const payload = result.responseBody ? JSON.parse(result.responseBody) as { saved?: boolean; error?: string } : {};
+  if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error || !payload.saved) {
+    throw new Error(payload.error || 'Roster response function failed.');
+  }
   return true;
 }
 
@@ -1256,6 +1376,9 @@ function App() {
   }));
   const [smsLogs, setSmsLogs] = useState<SmsLog[]>(() => readStoredArray(smsLogsStorageKey, []));
   const [smsTemplates, setSmsTemplates] = useState<Record<JobStatus, string>>(() => readStoredValue(smsTemplateStorageKey, defaultSmsTemplates));
+  const rosterActionSnapshotRef = useRef<Record<string, string>>({});
+  const clockActionSnapshotRef = useRef<Record<string, string>>({});
+  const sharedStateHydratedRef = useRef(false);
 
   const lockedBusinessId = authUser?.role === 'admin' || authUser?.role === 'staff' ? authUser.businessId : undefined;
   const resolvedBusinessId = lockedBusinessId ?? activeBusinessId;
@@ -1519,7 +1642,11 @@ function App() {
     if (!hasAppwriteConfig || !appwriteDatabaseId || !activeBusiness?.id) return;
     let cancelled = false;
 
-    fetchPersistedRosterShifts(activeBusiness.id)
+    const fetchRosterShifts = appwriteInviteFunctionId
+      ? fetchRosterShiftsThroughFunction(activeBusiness.id).catch(() => fetchPersistedRosterShifts(activeBusiness.id))
+      : fetchPersistedRosterShifts(activeBusiness.id);
+
+    fetchRosterShifts
       .then((persistedShifts) => {
         if (cancelled || !persistedShifts.length) return;
         setRosterShifts((current) => [
@@ -1535,19 +1662,23 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeBusiness.id]);
+  }, [activeBusiness.id, authUser?.role]);
 
   useEffect(() => {
     if (!hasAppwriteConfig || !appwriteInviteFunctionId || !activeBusiness?.id) return;
     let cancelled = false;
+    sharedStateHydratedRef.current = false;
 
     const refreshSharedOrganisationState = async () => {
       try {
-        const [persistedInvites, clockStates] = await Promise.all([
+        const [persistedInvites, clockStates, persistedShifts] = await Promise.all([
           fetchInvitesThroughFunction(activeBusiness.id),
-          fetchStaffClockStatesThroughFunction(activeBusiness.id)
+          fetchStaffClockStatesThroughFunction(activeBusiness.id),
+          fetchRosterShiftsThroughFunction(activeBusiness.id)
         ]);
         if (cancelled) return;
+        const firstHydration = !sharedStateHydratedRef.current;
+
         if (persistedInvites.length) {
           setOrganisationInvites((current) => {
             const incomingIds = new Set(persistedInvites.map((invite) => invite.id));
@@ -1555,9 +1686,52 @@ function App() {
             return [...persistedInvites, ...untouched];
           });
         }
+        if (persistedShifts.length) {
+          const nextRosterSnapshot = Object.fromEntries(
+            persistedShifts.map((shift) => [shift.id, `${shift.response}:${shift.respondedAt || shift.viewedAt || shift.sentAt || ''}`])
+          );
+          if (!firstHydration && (authUser?.role === 'admin' || authUser?.role === 'super')) {
+            const changedShift = persistedShifts.find((shift) => {
+              const previous = rosterActionSnapshotRef.current[shift.id];
+              const next = nextRosterSnapshot[shift.id];
+              return previous && previous !== next && (shift.response === 'accepted' || shift.response === 'declined');
+            });
+            if (changedShift) {
+              showRosterToast(
+                `${changedShift.staffName} ${changedShift.response} ${changedShift.start} roster`,
+                changedShift.response === 'declined' ? 'warning' : 'success'
+              );
+            }
+          }
+          rosterActionSnapshotRef.current = nextRosterSnapshot;
+          setRosterShifts((current) => [
+            ...persistedShifts,
+            ...current.filter((shift) => shift.businessId !== activeBusiness.id || persistedShifts.every((item) => item.id !== shift.id))
+          ]);
+        }
         if (clockStates.length) {
+          const nextClockSnapshot = Object.fromEntries(
+            clockStates.map((state) => [state.staffUserId, `${state.clockedIn ? 'in' : 'out'}:${state.clockInAt || ''}:${state.lastShift || ''}`])
+          );
+          if (!firstHydration && (authUser?.role === 'admin' || authUser?.role === 'super')) {
+            const changedClock = clockStates.find((state) => {
+              const previous = clockActionSnapshotRef.current[state.staffUserId];
+              const next = nextClockSnapshot[state.staffUserId];
+              return previous && previous !== next;
+            });
+            if (changedClock) {
+              showRosterToast(
+                changedClock.clockedIn
+                  ? `${changedClock.staffName} clocked in`
+                  : `${changedClock.staffName} clocked out`,
+                'success'
+              );
+            }
+          }
+          clockActionSnapshotRef.current = nextClockSnapshot;
           setStaffMembers((current) => mergeStaffClockStates(current, clockStates, activeBusiness.id));
         }
+        sharedStateHydratedRef.current = true;
       } catch (error) {
         debugPersistence('shared organisation state refresh failed', error instanceof Error ? error.message : error);
       }
@@ -1570,7 +1744,7 @@ function App() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [activeBusiness.id]);
+  }, [activeBusiness.id, authUser?.role]);
 
   useEffect(() => {
     writeStoredValue(workflowStorageKey, workflowStages);
@@ -2505,7 +2679,10 @@ function App() {
     setRosterShifts((current) => [shift, ...current]);
     setSmsNotice(`Shift sent to ${shift.staffName} for ${formatRosterDate(shift.date)}, ${shift.start} to ${shift.end}.`);
     showRosterToast(`Shift sent to ${shift.staffName}`);
-    persistRosterShift(shift, authUser?.email || 'business_admin').catch((error) => {
+    const persistShift = appwriteInviteFunctionId
+      ? patchRosterShiftThroughFunction(shift).catch(() => persistRosterShift(shift, authUser?.email || 'business_admin'))
+      : persistRosterShift(shift, authUser?.email || 'business_admin');
+    persistShift.catch((error) => {
       console.warn('[Roster] Persist shift failed:', error);
     });
   }
@@ -2525,7 +2702,10 @@ function App() {
     setSmsNotice(message);
     showRosterToast(message, response === 'declined' ? 'warning' : 'success');
     if (updatedShift) {
-      patchRosterShift(updatedShift).catch((error) => {
+      const persistResponse = appwriteInviteFunctionId
+        ? patchRosterShiftThroughFunction(updatedShift).catch(() => patchRosterShift(updatedShift))
+        : patchRosterShift(updatedShift);
+      persistResponse.catch((error) => {
         console.warn('[Roster] Persist response failed:', error);
       });
     }
@@ -2786,8 +2966,8 @@ function App() {
             toggleJobPaid={toggleJobPaid}
             workflowStages={workflowStages}
             setWorkflowStage={(status, patch) => setWorkflowStages((stages) => ({ ...stages, [status]: { ...stages[status], ...patch } }))}
-            applyIndustryPreset={() => {
-              const preset = industryPresetFor(activeBusiness.industry);
+            applyIndustryPreset={(presetKey) => {
+              const preset = presetKey ? industryPresets[presetKey] : industryPresetFor(activeBusiness.industry);
               setWorkflowStages(cloneWorkflowStages(preset.stages));
               setSmsTemplates(cloneSmsTemplates(preset.templates));
               setSmsNotice(`${preset.label} workflow and SMS templates applied for ${activeBusiness.name}.`);
@@ -3494,7 +3674,7 @@ function BusinessAdminView(props: {
   toggleJobPaid: (jobId: string) => void;
   workflowStages: Record<JobStatus, WorkflowStage>;
   setWorkflowStage: (status: JobStatus, patch: Partial<WorkflowStage>) => void;
-  applyIndustryPreset: () => void;
+  applyIndustryPreset: (presetKey?: string) => void;
   smsNotice: string;
   workflowToast: WorkflowToast | null;
   masterSmsSettings: MasterSmsSettings;
@@ -3531,8 +3711,41 @@ function BusinessAdminView(props: {
   const activeJobs = props.jobs.filter((job) => job.status !== 'completed');
   const completedJobs = props.jobs.filter((job) => job.status === 'completed');
   const readyJobs = activeJobs.filter((job) => job.status === 'ready_for_pickup').length;
+  const inProgressJobs = activeJobs.filter((job) => job.status === 'in_progress').length;
+  const unpaidActiveJobs = activeJobs.filter((job) => !job.paid).length;
   const onShiftCount = props.staff.filter((member) => member.clockedIn).length;
   const industryPreset = industryPresetFor(props.business.industry);
+  const smsReady = props.masterSmsSettings.status === 'connected' && Boolean(appwriteSmsFunctionId);
+  const activeBusinessLocation = [props.business.industry, props.business.location].filter(Boolean).join(' · ');
+  const focusMessage = activeJobs.length
+    ? `${inProgressJobs} in progress, ${readyJobs} ready, ${unpaidActiveJobs} unpaid.`
+    : 'No active work waiting. Add the next customer order when they arrive.';
+  const focusCards = [
+    {
+      label: 'Active queue',
+      value: activeJobs.length,
+      detail: activeJobs.length ? `${inProgressJobs} being worked on` : 'Clear for now',
+      tone: 'brand'
+    },
+    {
+      label: 'Ready to hand over',
+      value: readyJobs,
+      detail: readyJobs ? 'Customers can collect' : 'Nothing waiting',
+      tone: readyJobs ? 'success' : 'neutral'
+    },
+    {
+      label: 'Payments',
+      value: unpaidActiveJobs,
+      detail: unpaidActiveJobs ? 'Need follow-up' : 'Active jobs paid',
+      tone: unpaidActiveJobs ? 'warning' : 'success'
+    },
+    {
+      label: 'Team today',
+      value: onShiftCount,
+      detail: pendingRosterReplies ? `${pendingRosterReplies} roster replies` : 'Roster quiet',
+      tone: pendingRosterReplies ? 'warning' : 'neutral'
+    }
+  ];
   const visibleHistoryJobs = props.jobs;
   const visibleJobsForView = jobsView === 'active' ? activeJobs : jobsView === 'completed' ? completedJobs : visibleHistoryJobs;
   const operationalSelectedJob = visibleJobsForView.find((job) => job.id === props.selectedJob?.id);
@@ -3550,6 +3763,11 @@ function BusinessAdminView(props: {
             <span className="eyebrow">{greetingForNow()}</span>
             <h2>Today at {props.business.name}</h2>
             <p>{activeJobs.length ? `${activeJobs.length} active jobs in the queue. ${readyJobs} ready for pickup.` : 'A clean workspace for today’s jobs.'}</p>
+            <div className="business-identity-row" aria-label="Business profile">
+              {activeBusinessLocation && <span>{activeBusinessLocation}</span>}
+              <span>{industryPreset.label}</span>
+              <span>{smsReady ? 'SMS ready' : 'SMS needs setup'}</span>
+            </div>
             <small className="powered-by-inline">Powered by Verola</small>
           </div>
         </div>
@@ -3561,6 +3779,30 @@ function BusinessAdminView(props: {
         </div>
       </section>
 
+      <section className="business-focus-strip" aria-label="Today’s business focus">
+        <div className="focus-copy">
+          <span className="eyebrow">Today’s focus</span>
+          <h3>{activeJobs.length ? 'Keep work moving and customers updated.' : 'Start the day with a clean queue.'}</h3>
+          <p>{focusMessage}</p>
+        </div>
+        <div className="focus-card-grid">
+          {focusCards.map((card) => (
+            <div className={`focus-card ${card.tone}`} key={card.label}>
+              <span>{card.label}</span>
+              <strong>{card.value}</strong>
+              <small>{card.detail}</small>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <nav className="business-quick-actions" aria-label="Business shortcuts">
+        <a href="#add-order"><Plus size={17} /> Add order</a>
+        <a href="#active-orders"><ClipboardList size={17} /> Active jobs</a>
+        <a href="#staff-rosters"><CalendarPlus size={17} /> Rosters</a>
+        <a href="#workflow-settings"><Settings size={17} /> Workflow</a>
+      </nav>
+
       {liveStaffNotice && (
         <div className={`workflow-toast roster admin-live-toast ${liveStaffNoticeTone}`}>
           {liveStaffNoticeTone === 'success' ? <CheckCircle2 size={17} /> : <Bell size={17} />}
@@ -3568,7 +3810,7 @@ function BusinessAdminView(props: {
         </div>
       )}
 
-      <section className="panel create-job admin-primary-panel">
+      <section className="panel create-job admin-primary-panel" id="add-order">
         <PanelHeader icon={Plus} title="Add order" action="Name, mobile, details" />
         <div className="quick-form">
           <input value={props.newCustomer} onChange={(event) => props.setNewCustomer(event.target.value)} placeholder="Customer name" />
@@ -3585,7 +3827,7 @@ function BusinessAdminView(props: {
         </div>
       </section>
 
-      <section className="panel workflow-panel">
+      <section className="panel workflow-panel" id="active-orders">
         <JobsHeader query={props.query} setQuery={props.setQuery} />
         {props.workflowToast && (
           <div className={`workflow-toast ${props.workflowToast.tone}`} key={props.workflowToast.id}>
@@ -3594,6 +3836,7 @@ function BusinessAdminView(props: {
           </div>
         )}
         <BusinessJobsNav activeView={jobsView} setView={setJobsView} activeCount={activeJobs.length} completedCount={completedJobs.length} historyCount={props.jobs.length} />
+        {jobsView === 'active' && <QueueStageSummary jobs={activeJobs} workflowStages={props.workflowStages} />}
         <div className={operationalSelectedJob ? 'simple-order-shell has-drawer' : 'simple-order-shell'}>
           {jobsView === 'active' && (
             <SimpleOrderList
@@ -3616,7 +3859,7 @@ function BusinessAdminView(props: {
       </section>
 
       <section className="admin-secondary-grid">
-        <details className="panel admin-drawer roster-drawer">
+        <details className="panel admin-drawer roster-drawer" id="staff-rosters">
           <summary><CalendarPlus size={18} /> Rostering <span>{pendingRosterReplies} pending</span></summary>
           <RosterOperationsSummary shifts={props.rosterShifts} toast={props.rosterToast} />
           <RosterPlanner
@@ -3631,7 +3874,7 @@ function BusinessAdminView(props: {
       </section>
 
       <section className="admin-support-grid">
-        <details className="panel admin-drawer">
+        <details className="panel admin-drawer" id="workflow-settings">
           <summary><Settings size={18} /> Workflow stages <span>4 automated stages</span></summary>
           <p className="workflow-editor-note">These stages control the internal order flow. Customer text is controlled separately in Messaging templates.</p>
           <div className="preset-banner">
@@ -3639,8 +3882,9 @@ function BusinessAdminView(props: {
               <strong>{industryPreset.label}</strong>
               <span>Apply a clean workflow and SMS wording for {props.business.industry || 'this business'}.</span>
             </div>
-            <button type="button" onClick={props.applyIndustryPreset}>Apply preset</button>
+            <button type="button" onClick={() => props.applyIndustryPreset()}>Apply preset</button>
           </div>
+          <IndustryPresetPicker activeKey={industryPresetKey(props.business.industry)} applyPreset={props.applyIndustryPreset} />
           <WorkflowStageEditor stages={props.workflowStages} setStage={props.setWorkflowStage} />
         </details>
 
@@ -3950,6 +4194,26 @@ function BusinessJobsNav({
   );
 }
 
+function QueueStageSummary({ jobs, workflowStages }: { jobs: Job[]; workflowStages: Record<JobStatus, WorkflowStage> }) {
+  const stages = statusFlow.filter((status) => status !== 'completed');
+  return (
+    <div className="queue-stage-summary" aria-label="Active order stages">
+      {stages.map((status, index) => {
+        const count = jobs.filter((job) => job.status === status).length;
+        return (
+          <div className="queue-stage-pill" key={status}>
+            <span>{index + 1}</span>
+            <div>
+              <strong>{simpleStageLabel(status, workflowStages)}</strong>
+              <small>{count} active</small>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SimpleOrderTabs({
   jobs,
   activeFilter,
@@ -4005,52 +4269,43 @@ function SimpleOrderList({
     );
   }
 
-  const groups: JobStatus[] = ['collected', 'in_progress', 'ready_for_pickup'];
+  const sortedJobs = [...jobs].sort((a, b) => {
+    const statusDifference = statusFlow.indexOf(a.status) - statusFlow.indexOf(b.status);
+    return statusDifference || a.customer.localeCompare(b.customer);
+  });
 
   return (
-    <div className="simple-order-list grouped">
-      {groups.map((status) => {
-        const stageJobs = jobs.filter((job) => job.status === status);
+    <div className="simple-order-list queue">
+      <div className="simple-order-head" aria-hidden="true">
+        <span>Customer</span>
+        <span>Order</span>
+        <span>Status</span>
+        <span>Action</span>
+      </div>
+      {sortedJobs.map((job) => {
+        const notification = latestNotification(job);
+        const nextStatus = nextJobStatus(job.status);
         return (
-          <section className="simple-stage-group" key={status}>
-            <div className="simple-stage-heading">
+          <article className={`simple-order-card ${selectedJobId === job.id ? 'selected' : ''}`} key={job.id} onClick={() => setSelectedJobId(job.id)}>
+            <div className="simple-order-main">
               <div>
-                <span>{simpleStageLabel(status, workflowStages)}</span>
-                <strong>{stageJobs.length}</strong>
+                <strong>{job.customer}</strong>
+                <span>{job.phone}</span>
               </div>
             </div>
-            {stageJobs.length ? (
-              <div className="simple-stage-rows">
-                {stageJobs.map((job) => {
-                  const notification = latestNotification(job);
-                  const nextStatus = nextJobStatus(job.status);
-                  return (
-                    <article className={`simple-order-card ${selectedJobId === job.id ? 'selected' : ''}`} key={job.id} onClick={() => setSelectedJobId(job.id)}>
-                      <div className="simple-order-main">
-                        <div>
-                          <strong>{job.customer}</strong>
-                          <span>{job.phone}</span>
-                        </div>
-                      </div>
-                      <p>{job.item}</p>
-                      <div className="simple-order-meta">
-                        <PaymentBadge paid={job.paid} />
-                        <SmsStatePill notification={notification} />
-                        <span>Updated {lastUpdateLabel(job)}</span>
-                      </div>
-                      <div className="simple-order-actions" onClick={(event) => event.stopPropagation()}>
-                        {nextStatus && <button className="primary-simple-action" onClick={() => updateJobStatus(job.id, nextStatus)}>{queueActionLabel(nextStatus, workflowStages)}</button>}
-                        <button className="secondary-simple-action" onClick={() => toggleJobPaid(job.id)}>{job.paid ? 'Mark unpaid' : 'Mark paid'}</button>
-                        <span className="row-detail-hint">Details</span>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="simple-stage-empty">No jobs in {simpleStageLabel(status, workflowStages).toLowerCase()}.</div>
-            )}
-          </section>
+            <p>{job.item}</p>
+            <div className="simple-order-meta">
+              <StatusBadge status={job.status} workflowStages={workflowStages} />
+              <PaymentBadge paid={job.paid} />
+              <SmsStatePill notification={notification} />
+              <span>Updated {lastUpdateLabel(job)}</span>
+            </div>
+            <div className="simple-order-actions" onClick={(event) => event.stopPropagation()}>
+              {nextStatus && <button className="primary-simple-action" onClick={() => updateJobStatus(job.id, nextStatus)}>{queueActionLabel(nextStatus, workflowStages)}</button>}
+              <button className="secondary-simple-action" onClick={() => toggleJobPaid(job.id)}>{job.paid ? 'Mark unpaid' : 'Mark paid'}</button>
+              <button className="ghost-simple-action" type="button" onClick={() => setSelectedJobId(job.id)}>Details</button>
+            </div>
+          </article>
         );
       })}
     </div>
@@ -4906,6 +5161,34 @@ function latestNotification(job: Job): JobNotification {
     time: '',
     message: 'Update a status to prepare a customer message.'
   };
+}
+
+function IndustryPresetPicker({
+  activeKey,
+  applyPreset
+}: {
+  activeKey: string;
+  applyPreset: (presetKey?: string) => void;
+}) {
+  return (
+    <div className="industry-preset-picker">
+      <div className="section-mini-heading">
+        <strong>Industry quick setup</strong>
+        <span>Changes workflow buttons and SMS templates</span>
+      </div>
+      <div className="industry-preset-grid">
+        {industryPresetOptions.map((key) => {
+          const preset = industryPresets[key];
+          return (
+            <button className={key === activeKey ? 'active' : ''} key={key} type="button" onClick={() => applyPreset(key)}>
+              <strong>{preset.label}</strong>
+              <span>{preset.description}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function SmsTemplateEditor({
