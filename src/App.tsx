@@ -2477,6 +2477,11 @@ function App() {
           await account.createSession(magicUserId, magicSecret);
           await account.updateName(adminName);
           await account.updatePassword(password);
+          await account.updatePrefs({
+            role: invite.role === 'staff' ? 'staff' : 'admin',
+            businessId: invite.businessId,
+            name: adminName
+          });
           debugInvite('appwrite magic URL session created', { userId: magicUserId });
         } catch (sessionError) {
           debugInvite('magic URL session failed, continuing with local setup', {
@@ -2504,6 +2509,9 @@ function App() {
         const payload = result.responseBody ? JSON.parse(result.responseBody) as { accepted?: boolean; error?: string } : {};
         if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error) {
           throw new Error(payload.error || 'Invite setup function failed.');
+        }
+        if (!payload.accepted) {
+          throw new Error('Invite setup did not confirm account linking.');
         }
       }
     } catch (error) {

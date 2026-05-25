@@ -297,14 +297,29 @@ async function listInvitesByOrg(databases, users, organisationId) {
     if (doc.status !== 'accepted') {
       try {
         const matchingUsers = await users.list([Query.equal('email', doc.adminEmail)]);
-        const acceptedUser = matchingUsers.users.find((user) =>
-          user.prefs?.businessId === organisationId
-          && (
-            user.prefs?.role === (doc.role === 'staff' ? 'staff' : 'admin')
-            || user.prefs?.role === doc.role
-          )
-        );
+        const acceptedUser = matchingUsers.users.find((user) => {
+          const expectedRole = doc.role === 'staff' ? 'staff' : 'admin';
+          const prefsMatch = user.prefs?.businessId === organisationId
+            && (
+              user.prefs?.role === expectedRole
+              || user.prefs?.role === doc.role
+            );
+          const accessedAt = user.accessedAt ? new Date(user.accessedAt).getTime() : 0;
+          const inviteCreatedAt = doc.createdAt ? new Date(doc.createdAt).getTime() : 0;
+          const acceptedViaMagicUrl = Boolean(user.emailVerification)
+            && Boolean(accessedAt)
+            && (!inviteCreatedAt || accessedAt >= inviteCreatedAt - 60000);
+          return prefsMatch || acceptedViaMagicUrl;
+        });
         if (acceptedUser) {
+          try {
+            await users.updatePrefs(acceptedUser.$id, {
+              ...(acceptedUser.prefs || {}),
+              role: doc.role === 'staff' ? 'staff' : 'admin',
+              businessId: organisationId,
+              name: acceptedUser.name || doc.contactName || doc.adminEmail
+            });
+          } catch { /* best-effort account linking */ }
           nextDoc = await databases.updateDocument(databaseId, invitesCollectionId, doc.$id, {
             status: 'accepted',
             acceptedAt: new Date().toISOString(),
