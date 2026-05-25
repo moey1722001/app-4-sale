@@ -35,6 +35,14 @@ async function request(method, path, body) {
 }
 
 async function ensureDatabase() {
+  try {
+    await request('GET', `/databases/${databaseId}`);
+    console.log(`Database exists: ${databaseId}`);
+    return;
+  } catch (error) {
+    if (!String(error?.message || '').includes('404')) throw error;
+  }
+
   const result = await request('POST', '/databases', {
     databaseId,
     name: 'Verola'
