@@ -1,7 +1,7 @@
 const endpoint = process.env.APPWRITE_ENDPOINT;
 const projectId = process.env.APPWRITE_PROJECT_ID;
 const apiKey = process.env.APPWRITE_API_KEY;
-const databaseId = process.env.APPWRITE_DATABASE_ID || 'verola';
+const databaseId = process.env.APPWRITE_DATABASE_ID || 'app4sale';
 const logoBucketId = process.env.APPWRITE_LOGO_BUCKET_ID || 'organisation-logos';
 
 if (!endpoint || !projectId || !apiKey) {
@@ -146,6 +146,10 @@ const collections = [
       { key: 'adminEmail', type: 'string', size: 160 },
       { key: 'contactName', type: 'string', size: 160 },
       { key: 'contactPhone', type: 'string', size: 40 },
+      { key: 'featureJobs', type: 'boolean', default: true },
+      { key: 'featureSms', type: 'boolean', default: true },
+      { key: 'featureRostering', type: 'boolean', default: true },
+      { key: 'featureTimeClock', type: 'boolean', default: true },
       { key: 'teamId', type: 'string', size: 80, required: true }
     ],
     indexes: [

@@ -190,13 +190,85 @@ async function upsertOrganisation(databases, payload) {
     contactName: business?.contactName || payload.contactName || '',
     contactPhone: business?.contactPhone || payload.phone || '',
     teamId: business?.teamId || businessId,
+    featureJobs: business?.featureJobs ?? business?.features?.jobs ?? true,
+    featureSms: business?.featureSms ?? business?.features?.sms ?? business?.messagingEnabled ?? true,
+    featureRostering: business?.featureRostering ?? business?.features?.rostering ?? true,
+    featureTimeClock: business?.featureTimeClock ?? business?.features?.timeClock ?? true,
   };
   try {
     await databases.updateDocument(databaseId, organisationsCollectionId, businessId, data);
-  } catch {
-    await databases.createDocument(databaseId, organisationsCollectionId, businessId, data);
+  } catch (updateError) {
+    try {
+      await databases.createDocument(databaseId, organisationsCollectionId, businessId, data);
+    } catch (createError) {
+      const retryData = { ...data };
+      delete retryData.featureJobs;
+      delete retryData.featureSms;
+      delete retryData.featureRostering;
+      delete retryData.featureTimeClock;
+      try {
+        await databases.updateDocument(databaseId, organisationsCollectionId, businessId, retryData);
+      } catch {
+        await databases.createDocument(databaseId, organisationsCollectionId, businessId, retryData);
+      }
+      if (!createError?.message?.includes('Invalid document structure')) throw createError;
+    }
   }
   return true;
+}
+
+function settingDocumentId(prefix, businessId, status) {
+  const safeId = String(businessId || '').replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 18);
+  return `${prefix}-${safeId}-${String(status).replace(/_/g, '-')}`.slice(0, 36);
+}
+
+async function listBusinessSettings(databases, businessId) {
+  const [stages, templates] = await Promise.all([
+    databases.listDocuments(databaseId, 'workflowStages', [
+      Query.equal('organisationId', businessId),
+      Query.limit(20)
+    ]),
+    databases.listDocuments(databaseId, 'smsTemplates', [
+      Query.equal('organisationId', businessId),
+      Query.limit(20)
+    ])
+  ]);
+  return { stages: stages.documents, templates: templates.documents };
+}
+
+async function saveBusinessSettings(databases, payload) {
+  const businessId = payload.businessId;
+  if (!businessId) throw new Error('Missing businessId.');
+  const stages = payload.stages || {};
+  const templates = payload.templates || {};
+  const statuses = ['collected', 'in_progress', 'ready_for_pickup', 'completed'];
+
+  await Promise.all(statuses.flatMap((status) => {
+    const stage = stages[status] || {};
+    const template = templates[status] || '';
+    const stageData = {
+      organisationId: businessId,
+      statusKey: status,
+      label: stage.label || status,
+      buttonLabel: stage.verb || stage.buttonLabel || status,
+      nextStep: stage.nextStep || '',
+      tone: stage.tone || 'blue'
+    };
+    const templateData = {
+      organisationId: businessId,
+      status,
+      body: template || '',
+      isEnabled: stage.sendsSms !== false
+    };
+    return [
+      databases.updateDocument(databaseId, 'workflowStages', settingDocumentId('stg', businessId, status), stageData)
+        .catch(() => databases.createDocument(databaseId, 'workflowStages', settingDocumentId('stg', businessId, status), stageData)),
+      databases.updateDocument(databaseId, 'smsTemplates', settingDocumentId('tpl', businessId, status), templateData)
+        .catch(() => databases.createDocument(databaseId, 'smsTemplates', settingDocumentId('tpl', businessId, status), templateData))
+    ];
+  }));
+
+  return { saved: true };
 }
 
 async function lookupInviteByToken(databases, token) {
@@ -536,6 +608,19 @@ export default async ({ req, res, log, error }) => {
       if (!services.configured) return json(res, { saved: false, error: services.error }, 503);
       const saved = await upsertOrganisation(services.databases, payload);
       return json(res, { saved });
+    }
+
+    if (action === 'list_business_settings') {
+      if (!services.configured) return json(res, { stages: [], templates: [], error: services.error }, 503);
+      if (!payload.businessId) return json(res, { stages: [], templates: [], error: 'Missing businessId.' }, 400);
+      const settings = await listBusinessSettings(services.databases, payload.businessId);
+      return json(res, settings);
+    }
+
+    if (action === 'save_business_settings') {
+      if (!services.configured) return json(res, { saved: false, error: services.error }, 503);
+      const saved = await saveBusinessSettings(services.databases, payload);
+      return json(res, saved);
     }
 
     if (action === 'save_branding') {

@@ -113,6 +113,14 @@ type Business = {
   adminEmail?: string;
   contactName?: string;
   contactPhone?: string;
+  features?: BusinessFeatures;
+};
+
+type BusinessFeatures = {
+  jobs: boolean;
+  sms: boolean;
+  rostering: boolean;
+  timeClock: boolean;
 };
 
 type AuthUser = {
@@ -149,6 +157,7 @@ type WorkflowStage = {
   verb: string;
   nextStep: string;
   tone: string;
+  sendsSms?: boolean;
 };
 
 type Job = {
@@ -238,6 +247,13 @@ type RosterShift = {
   respondedAt?: string;
 };
 
+const defaultBusinessFeatures: BusinessFeatures = {
+  jobs: true,
+  sms: true,
+  rostering: true,
+  timeClock: true
+};
+
 const platformFallbackBusiness: Business = {
   id: 'platform-fallback',
   name: 'No organisation selected',
@@ -254,7 +270,8 @@ const platformFallbackBusiness: Business = {
   messagingEnabled: false,
   smsProvider: null,
   smsSenderName: 'VEROLA',
-  smsSetupStatus: 'not_configured'
+  smsSetupStatus: 'not_configured',
+  features: defaultBusinessFeatures
 };
 
 const initialBusinesses: Business[] = [];
@@ -270,25 +287,29 @@ const defaultWorkflowStages: Record<JobStatus, WorkflowStage> = {
     label: 'Received',
     verb: 'Move to Received',
     nextStep: 'Start the work',
-    tone: 'blue'
+    tone: 'blue',
+    sendsSms: true
   },
   in_progress: {
     label: 'In Progress',
     verb: 'Move to In Progress',
     nextStep: 'Finish and mark ready',
-    tone: 'amber'
+    tone: 'amber',
+    sendsSms: true
   },
   ready_for_pickup: {
     label: 'Ready',
     verb: 'Move to Ready',
     nextStep: 'Notify and hand over',
-    tone: 'green'
+    tone: 'green',
+    sendsSms: true
   },
   completed: {
     label: 'Completed',
     verb: 'Complete Order',
     nextStep: 'Archived',
-    tone: 'slate'
+    tone: 'slate',
+    sendsSms: true
   }
 };
 
@@ -465,6 +486,70 @@ const industryPresets: Record<string, IndustryPreset> = {
       completed: 'Thanks {{customer}}. Your repair with {{business}} is complete.'
     }
   },
+  barber: {
+    label: 'Barber / walk-in queue',
+    description: 'Two-message queue: joined the line, then chair is ready.',
+    stages: {
+      collected: { label: 'In queue', verb: 'Add to queue', nextStep: 'Customer added to the wait list', tone: 'blue', sendsSms: true },
+      in_progress: { label: 'With barber', verb: 'Start service', nextStep: 'Customer is being served', tone: 'amber', sendsSms: false },
+      ready_for_pickup: { label: 'Spot ready', verb: 'Spot available', nextStep: 'Customer can come in now', tone: 'green', sendsSms: true },
+      completed: { label: 'Served', verb: 'Finish visit', nextStep: 'Visit archived', tone: 'slate', sendsSms: false }
+    },
+    templates: {
+      collected: 'Hi {{customer}}, you have been added to the queue at {{business}}. We will text when your spot is ready.',
+      in_progress: 'Hi {{customer}}, your service at {{business}} has started.',
+      ready_for_pickup: 'Hi {{customer}}, your spot is available at {{business}}. Please come to the store.',
+      completed: 'Thanks {{customer}}. Your visit with {{business}} is complete.'
+    }
+  },
+  restaurant: {
+    label: 'Restaurant / takeaway',
+    description: 'Order received, preparing, ready and collected.',
+    stages: {
+      collected: { label: 'Ordered', verb: 'Accept order', nextStep: 'Order accepted by staff', tone: 'blue', sendsSms: true },
+      in_progress: { label: 'Preparing', verb: 'Start preparing', nextStep: 'Kitchen is preparing order', tone: 'amber', sendsSms: true },
+      ready_for_pickup: { label: 'Ready', verb: 'Ready for pickup', nextStep: 'Customer can collect order', tone: 'green', sendsSms: true },
+      completed: { label: 'Collected', verb: 'Complete order', nextStep: 'Order archived', tone: 'slate', sendsSms: false }
+    },
+    templates: {
+      collected: 'Hi {{customer}}, {{business}} has received your order.',
+      in_progress: 'Hi {{customer}}, your order at {{business}} is being prepared.',
+      ready_for_pickup: 'Hi {{customer}}, your order is ready for pickup at {{business}}.',
+      completed: 'Thanks {{customer}}. Your order with {{business}} is complete.'
+    }
+  },
+  medical: {
+    label: 'Medical / allied health',
+    description: 'Arrival, appointment progress, follow-up and complete.',
+    stages: {
+      collected: { label: 'Arrived', verb: 'Mark arrived', nextStep: 'Patient checked in', tone: 'blue', sendsSms: false },
+      in_progress: { label: 'In consult', verb: 'Start consult', nextStep: 'Appointment underway', tone: 'amber', sendsSms: false },
+      ready_for_pickup: { label: 'Follow-up', verb: 'Send follow-up', nextStep: 'Patient receives next step', tone: 'green', sendsSms: true },
+      completed: { label: 'Completed', verb: 'Complete visit', nextStep: 'Visit archived', tone: 'slate', sendsSms: false }
+    },
+    templates: {
+      collected: 'Hi {{customer}}, you are checked in at {{business}}.',
+      in_progress: 'Hi {{customer}}, your appointment at {{business}} has started.',
+      ready_for_pickup: 'Hi {{customer}}, thanks for visiting {{business}}. Please contact us if you need anything else.',
+      completed: 'Thanks {{customer}}. Your visit with {{business}} is complete.'
+    }
+  },
+  cleaning: {
+    label: 'Cleaner / home services',
+    description: 'Booking received, job underway, finished, closed.',
+    stages: {
+      collected: { label: 'Booked', verb: 'Confirm booking', nextStep: 'Job added to schedule', tone: 'blue', sendsSms: true },
+      in_progress: { label: 'On site', verb: 'Start job', nextStep: 'Team has started work', tone: 'amber', sendsSms: true },
+      ready_for_pickup: { label: 'Finished', verb: 'Mark finished', nextStep: 'Customer notified job is done', tone: 'green', sendsSms: true },
+      completed: { label: 'Closed', verb: 'Close job', nextStep: 'Job archived', tone: 'slate', sendsSms: false }
+    },
+    templates: {
+      collected: 'Hi {{customer}}, your booking with {{business}} is confirmed.',
+      in_progress: 'Hi {{customer}}, the {{business}} team has started your job.',
+      ready_for_pickup: 'Hi {{customer}}, your job with {{business}} is complete.',
+      completed: 'Thanks {{customer}}. Your job with {{business}} has been closed.'
+    }
+  },
   service: {
     label: 'General service business',
     description: 'Simple received, in progress, ready and completed workflow.',
@@ -473,10 +558,17 @@ const industryPresets: Record<string, IndustryPreset> = {
   }
 };
 
-const industryPresetOptions = ['laundromat', 'mechanic', 'vet', 'grooming', 'beauty', 'tailoring', 'repair', 'service'];
+const industryPresetOptions = ['laundromat', 'barber', 'mechanic', 'vet', 'grooming', 'beauty', 'tailoring', 'restaurant', 'cleaning', 'medical', 'repair', 'service'];
 
 function cloneWorkflowStages(stages: Record<JobStatus, WorkflowStage>) {
-  return Object.fromEntries(statusFlow.map((status) => [status, { ...stages[status] }])) as Record<JobStatus, WorkflowStage>;
+  return Object.fromEntries(statusFlow.map((status) => [
+    status,
+    {
+      ...defaultWorkflowStages[status],
+      ...stages[status],
+      sendsSms: stages[status]?.sendsSms ?? true
+    }
+  ])) as Record<JobStatus, WorkflowStage>;
 }
 
 function cloneSmsTemplates(templates: Record<JobStatus, string>) {
@@ -488,7 +580,11 @@ function industryPresetKey(industry?: string) {
   if (/(laundry|laundromat|dry cleaner|drycleaner|wash|fold)/.test(value)) return 'laundromat';
   if (/(vet|veterinary|animal|pet clinic)/.test(value)) return 'vet';
   if (/(groom|pet groom|dog wash)/.test(value)) return 'grooming';
-  if (/(beauty|clinic|salon|appointment|barber|skin|cosmetic)/.test(value)) return 'beauty';
+  if (/(barber|hair|walk.?in|queue)/.test(value)) return 'barber';
+  if (/(beauty|clinic|salon|appointment|skin|cosmetic)/.test(value)) return 'beauty';
+  if (/(restaurant|takeaway|take away|cafe|food|kitchen)/.test(value)) return 'restaurant';
+  if (/(clean|cleaner|home service|housekeeping)/.test(value)) return 'cleaning';
+  if (/(medical|doctor|physio|chiro|allied health|dental|dentist)/.test(value)) return 'medical';
   if (/(tailor|alteration|garment|clothing)/.test(value)) return 'tailoring';
   if (/(mechanic|auto|vehicle|detailing|panel|tyre|tire)/.test(value)) return 'mechanic';
   if (/(phone|device|computer|appliance|repair)/.test(value)) return 'repair';
@@ -625,7 +721,39 @@ type OrganisationDocument = {
   adminEmail?: string;
   contactName?: string;
   contactPhone?: string;
+  featureJobs?: boolean;
+  featureSms?: boolean;
+  featureRostering?: boolean;
+  featureTimeClock?: boolean;
 };
+
+type WorkflowStageDocument = {
+  $id: string;
+  organisationId: string;
+  statusKey: JobStatus;
+  label: string;
+  buttonLabel: string;
+  nextStep: string;
+  tone?: string;
+};
+
+type SmsTemplateDocument = {
+  $id: string;
+  organisationId: string;
+  status: JobStatus;
+  body: string;
+  isEnabled?: boolean;
+};
+
+function normaliseBusinessFeatures(business?: Partial<Business> | OrganisationDocument): BusinessFeatures {
+  const source = business as Partial<Business> & Partial<OrganisationDocument>;
+  return {
+    jobs: source.features?.jobs ?? source.featureJobs ?? true,
+    sms: source.features?.sms ?? source.featureSms ?? source.messagingEnabled ?? true,
+    rostering: source.features?.rostering ?? source.featureRostering ?? true,
+    timeClock: source.features?.timeClock ?? source.featureTimeClock ?? true
+  };
+}
 
 function logoViewUrl(fileId?: string) {
   if (!fileId || !appwriteLogoBucketId) return undefined;
@@ -656,7 +784,8 @@ function businessFromOrganisationDocument(document: OrganisationDocument): Busin
     messagingEnabled: document.messagingEnabled ?? false,
     smsProvider: document.smsProvider ?? null,
     smsSenderName: sender,
-    smsSetupStatus: document.smsSetupStatus ?? 'not_configured'
+    smsSetupStatus: document.smsSetupStatus ?? 'not_configured',
+    features: normaliseBusinessFeatures(document)
   };
 }
 
@@ -680,7 +809,11 @@ function organisationPayloadFromBusiness(business: Business) {
     teamId: business.id,
     adminEmail: business.adminEmail,
     contactName: business.contactName,
-    contactPhone: business.contactPhone
+    contactPhone: business.contactPhone,
+    featureJobs: normaliseBusinessFeatures(business).jobs,
+    featureSms: normaliseBusinessFeatures(business).sms,
+    featureRostering: normaliseBusinessFeatures(business).rostering,
+    featureTimeClock: normaliseBusinessFeatures(business).timeClock
   };
 }
 
@@ -765,6 +898,12 @@ async function patchBusinessDocument(businessId: string, patch: Partial<Business
   if (patch.adminEmail !== undefined) payload.adminEmail = patch.adminEmail;
   if (patch.contactName !== undefined) payload.contactName = patch.contactName;
   if (patch.contactPhone !== undefined) payload.contactPhone = patch.contactPhone;
+  if (patch.features) {
+    payload.featureJobs = patch.features.jobs;
+    payload.featureSms = patch.features.sms;
+    payload.featureRostering = patch.features.rostering;
+    payload.featureTimeClock = patch.features.timeClock;
+  }
   await databases.updateDocument(appwriteDatabaseId, appwriteOrganisationCollectionId, businessId, payload);
   return true;
 }
@@ -788,6 +927,137 @@ async function saveOrganisationThroughFunction(business: Business) {
   if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error || !payload.saved) {
     throw new Error(payload.error || 'Organisation persistence function failed.');
   }
+  return true;
+}
+
+function stageDocumentId(businessId: string, status: JobStatus) {
+  const safeId = businessId.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 18);
+  return `stg-${safeId}-${status.replace(/_/g, '-')}`.slice(0, 36);
+}
+
+function templateDocumentId(businessId: string, status: JobStatus) {
+  const safeId = businessId.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 18);
+  return `tpl-${safeId}-${status.replace(/_/g, '-')}`.slice(0, 36);
+}
+
+function settingsFromDocuments(stages: WorkflowStageDocument[] = [], templates: SmsTemplateDocument[] = []) {
+  const nextStages = cloneWorkflowStages(defaultWorkflowStages);
+  const nextTemplates = cloneSmsTemplates(defaultSmsTemplates);
+
+  stages.forEach((stage) => {
+    if (!statusFlow.includes(stage.statusKey)) return;
+    nextStages[stage.statusKey] = {
+      ...nextStages[stage.statusKey],
+      label: stage.label || nextStages[stage.statusKey].label,
+      verb: stage.buttonLabel || nextStages[stage.statusKey].verb,
+      nextStep: stage.nextStep || nextStages[stage.statusKey].nextStep,
+      tone: stage.tone || nextStages[stage.statusKey].tone
+    };
+  });
+
+  templates.forEach((template) => {
+    if (!statusFlow.includes(template.status)) return;
+    nextTemplates[template.status] = template.body || nextTemplates[template.status];
+    nextStages[template.status] = {
+      ...nextStages[template.status],
+      sendsSms: template.isEnabled ?? true
+    };
+  });
+
+  return { stages: nextStages, templates: nextTemplates };
+}
+
+async function fetchBusinessSettingsThroughFunction(businessId: string) {
+  if (!hasAppwriteConfig || !appwriteInviteFunctionId) return null;
+  const execution = await functions.createExecution(
+    appwriteInviteFunctionId,
+    JSON.stringify({ action: 'list_business_settings', businessId }),
+    false,
+    '/',
+    ExecutionMethod.POST,
+    { 'content-type': 'application/json' }
+  );
+  const result = execution as { responseStatusCode?: number; responseBody?: string };
+  const payload = result.responseBody ? JSON.parse(result.responseBody) as {
+    stages?: WorkflowStageDocument[];
+    templates?: SmsTemplateDocument[];
+    error?: string;
+  } : {};
+  if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error) {
+    throw new Error(payload.error || 'Business settings lookup failed.');
+  }
+  return settingsFromDocuments(payload.stages, payload.templates);
+}
+
+async function fetchBusinessSettingsDirect(businessId: string) {
+  if (!hasAppwriteConfig || !appwriteDatabaseId) return null;
+  const [stagesResult, templatesResult] = await Promise.all([
+    databases.listDocuments(appwriteDatabaseId, 'workflowStages', [Query.equal('organisationId', businessId)]),
+    databases.listDocuments(appwriteDatabaseId, 'smsTemplates', [Query.equal('organisationId', businessId)])
+  ]);
+  return settingsFromDocuments(
+    stagesResult.documents as unknown as WorkflowStageDocument[],
+    templatesResult.documents as unknown as SmsTemplateDocument[]
+  );
+}
+
+async function saveBusinessSettingsThroughFunction(businessId: string, stages: Record<JobStatus, WorkflowStage>, templates: Record<JobStatus, string>) {
+  if (!hasAppwriteConfig || !appwriteInviteFunctionId) return false;
+  const execution = await functions.createExecution(
+    appwriteInviteFunctionId,
+    JSON.stringify({
+      action: 'save_business_settings',
+      businessId,
+      stages,
+      templates
+    }),
+    false,
+    '/',
+    ExecutionMethod.POST,
+    { 'content-type': 'application/json' }
+  );
+  const result = execution as { responseStatusCode?: number; responseBody?: string };
+  const payload = result.responseBody ? JSON.parse(result.responseBody) as { saved?: boolean; error?: string } : {};
+  if ((result.responseStatusCode && result.responseStatusCode >= 400) || payload.error || !payload.saved) {
+    throw new Error(payload.error || 'Business settings save failed.');
+  }
+  return true;
+}
+
+async function saveBusinessSettingsDirect(businessId: string, stages: Record<JobStatus, WorkflowStage>, templates: Record<JobStatus, string>) {
+  if (!hasAppwriteConfig || !appwriteDatabaseId) return false;
+  await Promise.all(statusFlow.flatMap((status) => {
+    const stage = stages[status];
+    const template = templates[status] || defaultSmsTemplates[status];
+    return [
+      databases.updateDocument(appwriteDatabaseId, 'workflowStages', stageDocumentId(businessId, status), {
+        organisationId: businessId,
+        statusKey: status,
+        label: stage.label,
+        buttonLabel: stage.verb,
+        nextStep: stage.nextStep,
+        tone: stage.tone
+      }).catch(() => databases.createDocument(appwriteDatabaseId, 'workflowStages', stageDocumentId(businessId, status), {
+        organisationId: businessId,
+        statusKey: status,
+        label: stage.label,
+        buttonLabel: stage.verb,
+        nextStep: stage.nextStep,
+        tone: stage.tone
+      })),
+      databases.updateDocument(appwriteDatabaseId, 'smsTemplates', templateDocumentId(businessId, status), {
+        organisationId: businessId,
+        status,
+        body: template,
+        isEnabled: stage.sendsSms ?? true
+      }).catch(() => databases.createDocument(appwriteDatabaseId, 'smsTemplates', templateDocumentId(businessId, status), {
+        organisationId: businessId,
+        status,
+        body: template,
+        isEnabled: stage.sendsSms ?? true
+      }))
+    ];
+  }));
   return true;
 }
 
@@ -1139,7 +1409,8 @@ function businessFromInvite(invite: OrganisationInvite): Business {
     smsSenderName: sender,
     smsSetupStatus: 'not_configured',
     contactName: invite.contactName,
-    contactPhone: invite.phone
+    contactPhone: invite.phone,
+    features: defaultBusinessFeatures
   };
 }
 
@@ -1379,6 +1650,8 @@ function App() {
   const rosterActionSnapshotRef = useRef<Record<string, string>>({});
   const clockActionSnapshotRef = useRef<Record<string, string>>({});
   const sharedStateHydratedRef = useRef(false);
+  const settingsHydratedBusinessRef = useRef('');
+  const settingsSaveSkipRef = useRef(true);
 
   const lockedBusinessId = authUser?.role === 'admin' || authUser?.role === 'staff' ? authUser.businessId : undefined;
   const resolvedBusinessId = lockedBusinessId ?? activeBusinessId;
@@ -1559,8 +1832,48 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!hasAppwriteConfig) return;
+    let refreshing = false;
+    const refreshBusinesses = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const persistedBusinesses = await fetchPersistedBusinesses();
+        if (persistedBusinesses.length) {
+          setBusinesses(persistedBusinesses);
+          setActiveBusinessId((current) => persistedBusinesses.some((business) => business.id === current) ? current : persistedBusinesses[0].id);
+        }
+      } catch (error) {
+        debugPersistence('foreground organisation refresh failed', error instanceof Error ? error.message : error);
+      } finally {
+        refreshing = false;
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshBusinesses();
+    };
+    window.addEventListener('focus', refreshBusinesses);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', refreshBusinesses);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
     writeStoredArray(businessStorageKey, businesses);
   }, [businesses]);
+
+  useEffect(() => {
+    if (!hasAppwriteConfig || !authReady || !authUser || businessesLoading || !businesses.length) return;
+    const syncableBusinesses = businesses.filter((business) => business.id !== 'platform-fallback');
+    if (!syncableBusinesses.length) return;
+    syncableBusinesses.forEach((business) => {
+      saveOrganisationThroughFunction(business)
+        .catch(() => persistBusinessDocument(business))
+        .catch((error) => debugPersistence('local organisation backfill failed', error instanceof Error ? error.message : error));
+    });
+  }, [authReady, authUser, businessesLoading, businesses]);
 
   useEffect(() => {
     writeStoredArray(inviteStorageKey, organisationInvites);
@@ -1662,7 +1975,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeBusiness.id, authUser?.role]);
+  }, [activeBusiness.id, authUser?.role, businesses]);
 
   useEffect(() => {
     if (!hasAppwriteConfig || !appwriteInviteFunctionId || !activeBusiness?.id) return;
@@ -1671,8 +1984,13 @@ function App() {
 
     const refreshSharedOrganisationState = async () => {
       try {
-        const [persistedInvites, clockStates, persistedShifts] = await Promise.all([
-          fetchInvitesThroughFunction(activeBusiness.id),
+        const inviteBusinessIds = authUser?.role === 'super'
+          ? businesses.map((business) => business.id).filter(Boolean)
+          : [activeBusiness.id];
+        const persistedInvites = (await Promise.all(inviteBusinessIds.map((businessId) =>
+          fetchInvitesThroughFunction(businessId).catch(() => [] as OrganisationInvite[])
+        ))).flat();
+        const [clockStates, persistedShifts] = await Promise.all([
           fetchStaffClockStatesThroughFunction(activeBusiness.id),
           fetchRosterShiftsThroughFunction(activeBusiness.id)
         ]);
@@ -1682,7 +2000,8 @@ function App() {
         if (persistedInvites.length) {
           setOrganisationInvites((current) => {
             const incomingIds = new Set(persistedInvites.map((invite) => invite.id));
-            const untouched = current.filter((invite) => invite.businessId !== activeBusiness.id || !incomingIds.has(invite.id));
+            const refreshedBusinessIds = new Set(inviteBusinessIds);
+            const untouched = current.filter((invite) => !refreshedBusinessIds.has(invite.businessId) || !incomingIds.has(invite.id));
             return [...persistedInvites, ...untouched];
           });
         }
@@ -1744,7 +2063,51 @@ function App() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [activeBusiness.id, authUser?.role]);
+  }, [activeBusiness.id, authUser?.role, businesses]);
+
+  useEffect(() => {
+    if (!activeBusiness?.id || activeBusiness.id === 'platform-fallback') return;
+    let cancelled = false;
+    settingsHydratedBusinessRef.current = '';
+    settingsSaveSkipRef.current = true;
+
+    const preset = industryPresetFor(activeBusiness.industry);
+    setWorkflowStages(cloneWorkflowStages(preset.stages));
+    setSmsTemplates(cloneSmsTemplates(preset.templates));
+
+    if (!hasAppwriteConfig) {
+      settingsHydratedBusinessRef.current = activeBusiness.id;
+      window.setTimeout(() => {
+        settingsSaveSkipRef.current = false;
+      }, 0);
+      return;
+    }
+
+    (appwriteInviteFunctionId
+      ? fetchBusinessSettingsThroughFunction(activeBusiness.id).catch(() => fetchBusinessSettingsDirect(activeBusiness.id))
+      : fetchBusinessSettingsDirect(activeBusiness.id)
+    )
+      .then((settings) => {
+        if (cancelled || !settings) return;
+        setWorkflowStages(cloneWorkflowStages(settings.stages));
+        setSmsTemplates(cloneSmsTemplates(settings.templates));
+        debugPersistence('business workflow settings loaded', { businessId: activeBusiness.id });
+      })
+      .catch((error) => {
+        debugPersistence('business workflow settings unavailable, using preset fallback', error instanceof Error ? error.message : error);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        settingsHydratedBusinessRef.current = activeBusiness.id;
+        window.setTimeout(() => {
+          settingsSaveSkipRef.current = false;
+        }, 0);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBusiness.id, activeBusiness.industry]);
 
   useEffect(() => {
     writeStoredValue(workflowStorageKey, workflowStages);
@@ -1753,6 +2116,21 @@ function App() {
   useEffect(() => {
     writeStoredValue(smsTemplateStorageKey, smsTemplates);
   }, [smsTemplates]);
+
+  useEffect(() => {
+    if (!activeBusiness?.id || activeBusiness.id === 'platform-fallback') return;
+    if (settingsSaveSkipRef.current || settingsHydratedBusinessRef.current !== activeBusiness.id) return;
+
+    const timeout = window.setTimeout(() => {
+      (saveBusinessSettingsThroughFunction(activeBusiness.id, workflowStages, smsTemplates)
+        .catch(() => saveBusinessSettingsDirect(activeBusiness.id, workflowStages, smsTemplates))
+      )
+        .then(() => debugPersistence('business workflow settings saved', { businessId: activeBusiness.id }))
+        .catch((error) => debugPersistence('business workflow settings save failed', error instanceof Error ? error.message : error));
+    }, 650);
+
+    return () => window.clearTimeout(timeout);
+  }, [activeBusiness.id, workflowStages, smsTemplates]);
 
   useEffect(() => {
     writeStoredValue(masterSmsStorageKey, masterSmsSettings);
@@ -2037,6 +2415,32 @@ function App() {
     }
   }
 
+  async function updateBusinessFeatures(businessId: string, patch: Partial<BusinessFeatures>) {
+    const currentBusiness = businesses.find((business) => business.id === businessId);
+    if (!currentBusiness) return;
+    const features = { ...normaliseBusinessFeatures(currentBusiness), ...patch };
+    const updatedBusiness = {
+      ...currentBusiness,
+      features,
+      messagingEnabled: features.sms
+    };
+    setBusinesses((current) => current.map((business) => (
+      business.id === businessId
+        ? updatedBusiness
+        : business
+    )));
+    try {
+      if (!(await saveOrganisationThroughFunction(updatedBusiness))) {
+        await patchBusinessDocument(businessId, { features, messagingEnabled: features.sms });
+      }
+      setInviteNotice('Feature access saved for this organisation.');
+      debugPersistence('business feature access saved', { businessId, features });
+    } catch (error) {
+      debugPersistence('feature access save failed, local fallback active', error instanceof Error ? error.message : error);
+      setInviteNotice('Feature access updated locally. Run Appwrite provisioning so this saves across devices.');
+    }
+  }
+
   async function completeInviteSetup(inviteToken: string) {
     const invite = organisationInvites.find((item) => item.token === inviteToken)
       || organisationInvites.find((item) => item.id === inviteToken)
@@ -2181,7 +2585,8 @@ function App() {
       messagingEnabled: false,
       smsProvider: null,
       smsSenderName: name.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 10) || 'VEROLA',
-      smsSetupStatus: 'not_configured'
+      smsSetupStatus: 'not_configured',
+      features: defaultBusinessFeatures
     };
     const invite: OrganisationInvite = {
       id: `INV-${Date.now()}`,
@@ -2529,6 +2934,10 @@ function App() {
   }
 
   async function sendCustomerSms(job: Job, status: JobStatus, message: string) {
+    const features = normaliseBusinessFeatures(activeBusiness);
+    if (!features.sms || !(workflowStages[status]?.sendsSms ?? true)) {
+      return { sent: false, skipped: true, response: 'SMS is disabled for this business or stage.' };
+    }
     if (masterSmsSettings.status !== 'connected') {
       return { sent: false, response: 'Master SMS provider is not connected.' };
     }
@@ -2574,6 +2983,7 @@ function App() {
       .replace('{{customer}}', targetJob.customer.split(' ')[0])
       .replace('{{business}}', activeBusiness.name);
     const smsResult = await sendCustomerSms(targetJob, status, message);
+    const smsSkipped = 'skipped' in smsResult && smsResult.skipped;
 
     setJobs((currentJobs) =>
       currentJobs.map((job) => {
@@ -2586,8 +2996,12 @@ function App() {
             {
               status,
               at: actionTime,
-              kind: smsResult.sent ? 'sms' : 'sms_failed',
-              sms: smsResult.sent ? `Customer SMS sent: ${message}` : `SMS failed. Status updated, but no customer message was sent. ${smsResult.response}`
+              kind: smsResult.sent ? 'sms' : smsSkipped ? 'status' : 'sms_failed',
+              sms: smsResult.sent
+                ? `Customer SMS sent: ${message}`
+                : smsSkipped
+                  ? `Status updated. ${smsResult.response}`
+                  : `SMS failed. Status updated, but no customer message was sent. ${smsResult.response}`
             },
             ...job.updates
           ]
@@ -2595,23 +3009,28 @@ function App() {
       })
     );
 
-    setSmsLogs((logs) => [
-      {
-        id: `sms-${Date.now()}`,
-        businessId: activeBusiness.id,
-        businessName: activeBusiness.name,
-        recipient: targetJob.phone,
-        templateKey: status,
-        status: smsResult.sent ? 'sent' : 'failed',
-        timestamp: actionTime,
-        provider: masterSmsSettings.provider,
-        response: smsResult.response
-      },
-      ...logs
-    ]);
+    if (!smsSkipped) {
+      setSmsLogs((logs) => [
+        {
+          id: `sms-${Date.now()}`,
+          businessId: activeBusiness.id,
+          businessName: activeBusiness.name,
+          recipient: targetJob.phone,
+          templateKey: status,
+          status: smsResult.sent ? 'sent' : 'failed',
+          timestamp: actionTime,
+          provider: masterSmsSettings.provider,
+          response: smsResult.response
+        },
+        ...logs
+      ]);
+    }
     if (smsResult.sent) {
       setSmsNotice(status === 'completed' ? 'Order completed and saved.' : `Customer notified: ${targetJob.customer}.`);
       showWorkflowToast(status === 'completed' ? 'Order completed and saved' : 'Customer notified');
+    } else if (smsSkipped) {
+      setSmsNotice(status === 'completed' ? 'Order completed and saved.' : 'Status updated. This stage does not send an SMS.');
+      showWorkflowToast(status === 'completed' ? 'Order completed and saved' : 'Status updated');
     } else {
       setSmsNotice(status === 'completed' ? 'Order completed and saved. SMS failed.' : 'SMS failed. Status updated, but no customer message was sent.');
       showWorkflowToast(status === 'completed' ? 'Order completed and saved' : 'SMS failed', status === 'completed' ? 'success' : 'warning');
@@ -2929,6 +3348,7 @@ function App() {
             uploadBusinessLogo={uploadBusinessLogo}
             removeBusinessLogo={removeBusinessLogo}
             updateBusinessBrand={updateBusinessBrand}
+            updateBusinessFeatures={updateBusinessFeatures}
             masterSmsSettings={masterSmsSettings}
             masterSmsDraft={masterSmsDraft}
             updateMasterSmsDraft={updateMasterSmsDraft}
@@ -2937,6 +3357,16 @@ function App() {
             disconnectMasterSmsProvider={disconnectMasterSmsProvider}
             smsLogs={smsLogs}
             smsNotice={smsNotice}
+            workflowStages={workflowStages}
+            setWorkflowStage={(status, patch) => setWorkflowStages((stages) => ({ ...stages, [status]: { ...stages[status], ...patch } }))}
+            applyIndustryPreset={(presetKey) => {
+              const preset = presetKey ? industryPresets[presetKey] : industryPresetFor(activeBusiness.industry);
+              setWorkflowStages(cloneWorkflowStages(preset.stages));
+              setSmsTemplates(cloneSmsTemplates(preset.templates));
+              setSmsNotice(`${preset.label} preset applied for ${activeBusiness.name}. Business admins can still edit labels and SMS wording.`);
+            }}
+            smsTemplates={smsTemplates}
+            setSmsTemplate={(status, body) => setSmsTemplates((templates) => ({ ...templates, [status]: body }))}
           />
         )}
 
@@ -3057,6 +3487,7 @@ function SuperAdminView({
   uploadBusinessLogo,
   removeBusinessLogo,
   updateBusinessBrand,
+  updateBusinessFeatures,
   masterSmsSettings,
   masterSmsDraft,
   updateMasterSmsDraft,
@@ -3064,7 +3495,12 @@ function SuperAdminView({
   testMasterSmsProvider,
   disconnectMasterSmsProvider,
   smsLogs,
-  smsNotice
+  smsNotice,
+  workflowStages,
+  setWorkflowStage,
+  applyIndustryPreset,
+  smsTemplates,
+  setSmsTemplate
 }: {
   businesses: Business[];
   businessesLoading: boolean;
@@ -3094,6 +3530,7 @@ function SuperAdminView({
   uploadBusinessLogo: (businessId: string, file?: File) => void;
   removeBusinessLogo: (businessId: string) => void;
   updateBusinessBrand: (businessId: string, patch: Partial<Pick<Business, 'primary' | 'accent'>>) => void;
+  updateBusinessFeatures: (businessId: string, patch: Partial<BusinessFeatures>) => void;
   masterSmsSettings: MasterSmsSettings;
   masterSmsDraft: MasterSmsDraft;
   updateMasterSmsDraft: (patch: Partial<MasterSmsDraft>) => void;
@@ -3102,6 +3539,11 @@ function SuperAdminView({
   disconnectMasterSmsProvider: () => void;
   smsLogs: SmsLog[];
   smsNotice: string;
+  workflowStages: Record<JobStatus, WorkflowStage>;
+  setWorkflowStage: (status: JobStatus, patch: Partial<WorkflowStage>) => void;
+  applyIndustryPreset: (presetKey?: string) => void;
+  smsTemplates: Record<JobStatus, string>;
+  setSmsTemplate: (status: JobStatus, body: string) => void;
 }) {
   const activeTenants = tenants.filter((tenant) => tenant.active).length;
   const pendingBusinessInvites = organisationInvites.filter((invite) => invite.role === 'business_admin' && inviteStatus(invite) === 'pending');
@@ -3228,6 +3670,10 @@ function SuperAdminView({
               <a href="/business-admin">Preview admin</a>
               <a href="/staff">Preview staff</a>
             </div>
+            <FeatureAccessPanel
+              features={normaliseBusinessFeatures(activeBusiness)}
+              updateFeature={(patch) => updateBusinessFeatures(activeBusiness.id, patch)}
+            />
           </section>
 
           <section className="panel selected-invite-card">
@@ -3260,6 +3706,14 @@ function SuperAdminView({
       </section>
 
       <section className="super-advanced-grid">
+        <details className="panel admin-drawer">
+          <summary><Settings size={18} /> Presets and customer texts <span>Super Admin controlled</span></summary>
+          <p className="workflow-editor-note">Assign the industry preset here. Business admins can still refine button labels and SMS wording, but they no longer choose the starting category.</p>
+          <IndustryPresetPicker activeKey={industryPresetKey(activeBusiness.industry)} applyPreset={applyIndustryPreset} />
+          <WorkflowStageEditor stages={workflowStages} setStage={setWorkflowStage} />
+          <SmsTemplateEditor templates={smsTemplates} setTemplate={setSmsTemplate} workflowStages={workflowStages} />
+        </details>
+
         <details className="panel admin-drawer">
           <summary><ShieldCheck size={18} /> Platform SMS <span>{masterSmsSettings.status === 'connected' ? providerName(masterSmsSettings.provider) : 'Not configured'}</span></summary>
           <MasterSmsSettingsPanel
@@ -3708,6 +4162,7 @@ function BusinessAdminView(props: {
 }) {
   const pendingRosterReplies = props.rosterShifts.filter((shift) => shift.response === 'sent').length;
   const [jobsView, setJobsView] = useState<BusinessJobsView>('active');
+  const features = normaliseBusinessFeatures(props.business);
   const activeJobs = props.jobs.filter((job) => job.status !== 'completed');
   const completedJobs = props.jobs.filter((job) => job.status === 'completed');
   const readyJobs = activeJobs.filter((job) => job.status === 'ready_for_pickup').length;
@@ -3715,7 +4170,7 @@ function BusinessAdminView(props: {
   const unpaidActiveJobs = activeJobs.filter((job) => !job.paid).length;
   const onShiftCount = props.staff.filter((member) => member.clockedIn).length;
   const industryPreset = industryPresetFor(props.business.industry);
-  const smsReady = props.masterSmsSettings.status === 'connected' && Boolean(appwriteSmsFunctionId);
+  const smsReady = features.sms && props.masterSmsSettings.status === 'connected' && Boolean(appwriteSmsFunctionId);
   const activeBusinessLocation = [props.business.industry, props.business.location].filter(Boolean).join(' · ');
   const focusMessage = activeJobs.length
     ? `${inProgressJobs} in progress, ${readyJobs} ready, ${unpaidActiveJobs} unpaid.`
@@ -3766,7 +4221,7 @@ function BusinessAdminView(props: {
             <div className="business-identity-row" aria-label="Business profile">
               {activeBusinessLocation && <span>{activeBusinessLocation}</span>}
               <span>{industryPreset.label}</span>
-              <span>{smsReady ? 'SMS ready' : 'SMS needs setup'}</span>
+              <span>{features.sms ? (smsReady ? 'SMS ready' : 'SMS unavailable') : 'SMS off'}</span>
             </div>
             <small className="powered-by-inline">Powered by Verola</small>
           </div>
@@ -3775,7 +4230,7 @@ function BusinessAdminView(props: {
           <div><strong>{activeJobs.length}</strong><span>Active jobs</span></div>
           <div><strong>{readyJobs}</strong><span>Ready</span></div>
           <div><strong>{onShiftCount}</strong><span>On shift</span></div>
-          <div><strong>{props.masterSmsSettings.status === 'connected' && appwriteSmsFunctionId ? 'On' : 'Off'}</strong><span>SMS</span></div>
+          <div><strong>{smsReady ? 'On' : 'Off'}</strong><span>SMS</span></div>
         </div>
       </section>
 
@@ -3797,9 +4252,9 @@ function BusinessAdminView(props: {
       </section>
 
       <nav className="business-quick-actions" aria-label="Business shortcuts">
-        <a href="#add-order"><Plus size={17} /> Add order</a>
-        <a href="#active-orders"><ClipboardList size={17} /> Active jobs</a>
-        <a href="#staff-rosters"><CalendarPlus size={17} /> Rosters</a>
+        {features.jobs && <a href="#add-order"><Plus size={17} /> Add order</a>}
+        {features.jobs && <a href="#active-orders"><ClipboardList size={17} /> Active jobs</a>}
+        {features.rostering && <a href="#staff-rosters"><CalendarPlus size={17} /> Rosters</a>}
         <a href="#workflow-settings"><Settings size={17} /> Workflow</a>
       </nav>
 
@@ -3810,7 +4265,7 @@ function BusinessAdminView(props: {
         </div>
       )}
 
-      <section className="panel create-job admin-primary-panel" id="add-order">
+      {features.jobs && <section className="panel create-job admin-primary-panel" id="add-order">
         <PanelHeader icon={Plus} title="Add order" action="Name, mobile, details" />
         <div className="quick-form">
           <input value={props.newCustomer} onChange={(event) => props.setNewCustomer(event.target.value)} placeholder="Customer name" />
@@ -3825,9 +4280,9 @@ function BusinessAdminView(props: {
             Add order
           </button>
         </div>
-      </section>
+      </section>}
 
-      <section className="panel workflow-panel" id="active-orders">
+      {features.jobs ? <section className="panel workflow-panel" id="active-orders">
         <JobsHeader query={props.query} setQuery={props.setQuery} />
         {props.workflowToast && (
           <div className={`workflow-toast ${props.workflowToast.tone}`} key={props.workflowToast.id}>
@@ -3856,10 +4311,18 @@ function BusinessAdminView(props: {
           )}
           {operationalSelectedJob && <JobDetail job={operationalSelectedJob} updateJobStatus={props.updateJobStatus} addJobNote={props.addJobNote} toggleJobPaid={props.toggleJobPaid} workflowStages={props.workflowStages} />}
         </div>
-      </section>
+      </section> : (
+        <section className="panel workflow-panel">
+          <div className="simple-empty-orders compact">
+            <ClipboardList size={22} />
+            <strong>Jobs are not enabled for this business</strong>
+            <p>Super Admin can turn jobs on when this customer needs order tracking.</p>
+          </div>
+        </section>
+      )}
 
       <section className="admin-secondary-grid">
-        <details className="panel admin-drawer roster-drawer" id="staff-rosters">
+        {features.rostering && <details className="panel admin-drawer roster-drawer" id="staff-rosters">
           <summary><CalendarPlus size={18} /> Rostering <span>{pendingRosterReplies} pending</span></summary>
           <RosterOperationsSummary shifts={props.rosterShifts} toast={props.rosterToast} />
           <RosterPlanner
@@ -3870,7 +4333,7 @@ function BusinessAdminView(props: {
             addShift={props.addRosterShift}
             deleteShift={props.deleteRosterShift}
           />
-        </details>
+        </details>}
       </section>
 
       <section className="admin-support-grid">
@@ -3880,19 +4343,17 @@ function BusinessAdminView(props: {
           <div className="preset-banner">
             <div>
               <strong>{industryPreset.label}</strong>
-              <span>Apply a clean workflow and SMS wording for {props.business.industry || 'this business'}.</span>
+              <span>Preset selected by Verola Super Admin. You can adjust button labels and internal wording below.</span>
             </div>
-            <button type="button" onClick={() => props.applyIndustryPreset()}>Apply preset</button>
           </div>
-          <IndustryPresetPicker activeKey={industryPresetKey(props.business.industry)} applyPreset={props.applyIndustryPreset} />
           <WorkflowStageEditor stages={props.workflowStages} setStage={props.setWorkflowStage} />
         </details>
 
-        <details className="panel admin-drawer">
+        {features.sms && <details className="panel admin-drawer">
           <summary><MessageSquareText size={18} /> Messaging <span>{props.masterSmsSettings.status === 'connected' && appwriteSmsFunctionId ? 'SMS active' : 'SMS unavailable'}</span></summary>
           <BusinessSmsStatus settings={props.masterSmsSettings} notice={props.smsNotice} sendTestSms={props.sendTestSms} logs={props.smsLogs} />
           <SmsTemplateEditor templates={props.smsTemplates} setTemplate={props.setSmsTemplate} workflowStages={props.workflowStages} />
-        </details>
+        </details>}
 
         <details className="panel admin-drawer">
           <summary><Users size={18} /> Staff and shifts <span>{props.staff.length} users</span></summary>
@@ -3914,6 +4375,44 @@ function BusinessAdminView(props: {
           <StaffShiftOverview staff={props.staff} removeStaffMember={props.removeStaffMember} />
         </details>
       </section>
+    </div>
+  );
+}
+
+function FeatureAccessPanel({
+  features,
+  updateFeature
+}: {
+  features: BusinessFeatures;
+  updateFeature: (patch: Partial<BusinessFeatures>) => void;
+}) {
+  const options: Array<{ key: keyof BusinessFeatures; title: string; copy: string }> = [
+    { key: 'jobs', title: 'Jobs', copy: 'Customer order queue and status workflow' },
+    { key: 'sms', title: 'SMS', copy: 'Automatic customer texts from status changes' },
+    { key: 'rostering', title: 'Rostering', copy: 'Send shifts for staff to accept or decline' },
+    { key: 'timeClock', title: 'Clock in/out', copy: 'Staff shift clocking and admin visibility' }
+  ];
+
+  return (
+    <div className="feature-access-panel">
+      <div className="section-mini-heading">
+        <strong>Feature access</strong>
+        <span>Choose what this business sees</span>
+      </div>
+      <div className="feature-toggle-grid">
+        {options.map((option) => (
+          <button
+            type="button"
+            key={option.key}
+            className={features[option.key] ? 'feature-toggle enabled' : 'feature-toggle'}
+            onClick={() => updateFeature({ [option.key]: !features[option.key] })}
+          >
+            <span>{features[option.key] ? 'On' : 'Off'}</span>
+            <strong>{option.title}</strong>
+            <small>{option.copy}</small>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -4002,6 +4501,7 @@ function StaffView(props: {
   updateRosterResponse: (shiftId: string, response: ShiftResponse) => void;
   toggleClock: () => void;
 }) {
+  const features = normaliseBusinessFeatures(props.business);
   const activeJobs = props.jobs.filter((job) => job.status !== 'completed');
   const staffSelectedJob = props.selectedJob && props.selectedJob.status !== 'completed'
     ? props.selectedJob
@@ -4019,12 +4519,12 @@ function StaffView(props: {
             <small className="powered-by-inline">Powered by Verola</small>
           </div>
         </div>
-        <button className={props.staffMember.clockedIn ? 'clock-action clock-out' : 'clock-action'} onClick={props.toggleClock}>
+        {features.timeClock && <button className={props.staffMember.clockedIn ? 'clock-action clock-out' : 'clock-action'} onClick={props.toggleClock}>
           {props.staffMember.clockedIn ? <LogOut size={20} /> : <LogIn size={20} />}
           {props.staffMember.clockedIn ? 'Clock out' : 'Clock in'}
-        </button>
+        </button>}
       </section>
-      <section className="panel wide">
+      {features.jobs && <section className="panel wide">
         <JobsHeader query={props.query} setQuery={props.setQuery} />
         <div className="staff-jobs-shell">
           <StaffJobList
@@ -4038,8 +4538,8 @@ function StaffView(props: {
             workflowStages={props.workflowStages}
           />
         </div>
-      </section>
-      <section className="panel wide">
+      </section>}
+      {features.rostering && <section className="panel wide">
         <PanelHeader icon={CalendarPlus} title="My shifts" action={`${props.rosterShifts.filter((shift) => shift.response === 'sent').length} to reply`} />
         {props.rosterToast && (
           <div className={`workflow-toast roster ${props.rosterToast.tone}`} key={props.rosterToast.id}>
@@ -4048,7 +4548,16 @@ function StaffView(props: {
           </div>
         )}
         <StaffRoster shifts={props.rosterShifts} updateRosterResponse={props.updateRosterResponse} />
-      </section>
+      </section>}
+      {!features.jobs && !features.rostering && !features.timeClock && (
+        <section className="panel wide">
+          <div className="simple-empty-orders compact">
+            <Shirt size={22} />
+            <strong>No staff tools enabled yet</strong>
+            <p>Your business admin can ask Verola to enable jobs, rosters, or clock in/out for this workspace.</p>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -5207,11 +5716,11 @@ function SmsTemplateEditor({
         <span>Auto-sent by stage</span>
       </div>
       {statusFlow.map((status) => (
-        <details className="template-accordion" key={status}>
+        <details className={(workflowStages[status].sendsSms ?? true) ? 'template-accordion' : 'template-accordion disabled'} key={status}>
           <summary>
             <div>
               <strong>{workflowStages[status].label}</strong>
-              <span>{stageActionCopy(status)}</span>
+              <span>{(workflowStages[status].sendsSms ?? true) ? stageActionCopy(status) : 'No SMS sent for this stage'}</span>
             </div>
             <small>{templates[status].length} chars</small>
           </summary>
@@ -5248,7 +5757,13 @@ function WorkflowStageEditor({
               <h3>{stages[status].label}</h3>
               <input value={stages[status].label} onChange={(event) => setStage(status, { label: event.target.value })} placeholder="Stage name" aria-label={`${status} stage name`} />
             </div>
-            <span className="sms-auto-pill">Uses template</span>
+            <button
+              type="button"
+              className={(stages[status].sendsSms ?? true) ? 'sms-auto-pill active' : 'sms-auto-pill off'}
+              onClick={() => setStage(status, { sendsSms: !(stages[status].sendsSms ?? true) })}
+            >
+              {(stages[status].sendsSms ?? true) ? 'SMS on' : 'SMS off'}
+            </button>
           </div>
           <div className="stage-detail-grid">
             <label>
@@ -5262,7 +5777,7 @@ function WorkflowStageEditor({
               <input value={stages[status].nextStep} onChange={(event) => setStage(status, { nextStep: event.target.value })} placeholder={stageActionCopy(status)} />
             </label>
           </div>
-          <p>{stageActionCopy(status)} SMS wording comes from the matching Messaging template.</p>
+          <p>{(stages[status].sendsSms ?? true) ? `${stageActionCopy(status)} SMS wording comes from the matching Messaging template.` : 'This stage updates the job only. No customer SMS will be sent.'}</p>
         </div>
       ))}
     </div>
