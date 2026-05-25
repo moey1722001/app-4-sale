@@ -8174,3 +8174,140 @@ body {
     width: 100%;
   }
 }
+
+/* Super Admin readability pass: keep setup controls wide enough to read. */
+.super-advanced-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.45fr);
+  align-items: start;
+}
+
+.preset-admin-drawer {
+  grid-column: 1 / -1;
+}
+
+.super-advanced-grid .admin-drawer {
+  border-radius: 24px;
+}
+
+.super-advanced-grid .admin-drawer summary {
+  min-height: auto;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 12px;
+  padding: 20px 22px;
+  line-height: 1.25;
+}
+
+.super-advanced-grid .admin-drawer summary span {
+  margin-left: auto;
+  max-width: 100%;
+  line-height: 1.3;
+  text-align: right;
+}
+
+.preset-admin-drawer .workflow-editor-note {
+  max-width: 780px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  font-size: 0.93rem;
+}
+
+.preset-admin-drawer .section-mini-heading {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 4px 12px;
+}
+
+.preset-admin-drawer .section-mini-heading strong {
+  flex: 0 0 auto;
+  font-size: 1rem;
+}
+
+.preset-admin-drawer .section-mini-heading span {
+  flex: 1 1 260px;
+  line-height: 1.35;
+}
+
+.industry-preset-grid {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.industry-preset-grid button {
+  min-height: auto;
+  padding: 15px 16px;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.industry-preset-grid strong,
+.industry-preset-grid span,
+.workflow-stage-card,
+.workflow-stage-card input,
+.template-accordion summary,
+.template-accordion textarea {
+  min-width: 0;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+
+.industry-preset-grid strong {
+  font-size: 0.96rem;
+  line-height: 1.25;
+}
+
+.industry-preset-grid span {
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.preset-admin-drawer .workflow-stage-board {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.preset-admin-drawer .workflow-stage-card {
+  padding: 16px;
+}
+
+.preset-admin-drawer .workflow-stage-top {
+  align-items: start;
+}
+
+.preset-admin-drawer .stage-detail-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+@media (max-width: 1180px) {
+  .super-advanced-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .super-advanced-grid {
+    gap: 14px;
+  }
+
+  .super-advanced-grid .admin-drawer summary {
+    padding: 18px;
+  }
+
+  .super-advanced-grid .admin-drawer summary span {
+    flex-basis: 100%;
+    margin-left: 28px;
+    text-align: left;
+  }
+
+  .super-advanced-grid .admin-drawer > :not(summary) {
+    margin-right: 14px;
+    margin-left: 14px;
+  }
+
+  .industry-preset-grid,
+  .preset-admin-drawer .workflow-stage-board {
+    grid-template-columns: 1fr;
+  }
+}

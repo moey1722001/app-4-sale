@@ -3706,9 +3706,9 @@ function SuperAdminView({
       </section>
 
       <section className="super-advanced-grid">
-        <details className="panel admin-drawer">
+        <details className="panel admin-drawer preset-admin-drawer">
           <summary><Settings size={18} /> Presets and customer texts <span>Super Admin controlled</span></summary>
-          <p className="workflow-editor-note">Assign the industry preset here. Business admins can still refine button labels and SMS wording, but they no longer choose the starting category.</p>
+          <p className="workflow-editor-note">Choose the starting workflow for this business. Business admins can still adjust their button labels and SMS wording afterwards.</p>
           <IndustryPresetPicker activeKey={industryPresetKey(activeBusiness.industry)} applyPreset={applyIndustryPreset} />
           <WorkflowStageEditor stages={workflowStages} setStage={setWorkflowStage} />
           <SmsTemplateEditor templates={smsTemplates} setTemplate={setSmsTemplate} workflowStages={workflowStages} />
