@@ -4183,35 +4183,18 @@ function BusinessAdminView(props: {
   const industryPreset = industryPresetFor(props.business.industry);
   const smsReady = features.sms && props.masterSmsSettings.status === 'connected' && Boolean(appwriteSmsFunctionId);
   const activeBusinessLocation = [props.business.industry, props.business.location].filter(Boolean).join(' · ');
-  const focusMessage = activeJobs.length
-    ? `${inProgressJobs} in progress, ${readyJobs} ready, ${unpaidActiveJobs} unpaid.`
-    : 'No active work waiting. Add the next customer order when they arrive.';
-  const focusCards = [
-    {
-      label: 'Active queue',
-      value: activeJobs.length,
-      detail: activeJobs.length ? `${inProgressJobs} being worked on` : 'Clear for now',
-      tone: 'brand'
-    },
-    {
-      label: 'Ready to hand over',
-      value: readyJobs,
-      detail: readyJobs ? 'Customers can collect' : 'Nothing waiting',
-      tone: readyJobs ? 'success' : 'neutral'
-    },
-    {
-      label: 'Payments',
-      value: unpaidActiveJobs,
-      detail: unpaidActiveJobs ? 'Need follow-up' : 'Active jobs paid',
-      tone: unpaidActiveJobs ? 'warning' : 'success'
-    },
-    {
-      label: 'Team today',
-      value: onShiftCount,
-      detail: pendingRosterReplies ? `${pendingRosterReplies} roster replies` : 'Roster quiet',
-      tone: pendingRosterReplies ? 'warning' : 'neutral'
-    }
-  ];
+  const nextAction = readyJobs
+    ? { label: 'Hand over ready orders', detail: `${readyJobs} ${readyJobs === 1 ? 'job is' : 'jobs are'} ready now.`, href: '#active-orders', icon: CheckCircle2 }
+    : activeJobs.length
+      ? { label: 'Keep active jobs moving', detail: `${activeJobs.length} active ${activeJobs.length === 1 ? 'job' : 'jobs'} in progress today.`, href: '#active-orders', icon: ClipboardList }
+      : { label: 'Add the first order', detail: 'Your active queue is clear for the day.', href: '#add-order', icon: Plus };
+  const priorityItems = [
+    readyJobs ? { label: 'Ready to hand over', value: readyJobs, tone: 'success' } : null,
+    inProgressJobs ? { label: 'In progress', value: inProgressJobs, tone: 'brand' } : null,
+    unpaidActiveJobs ? { label: 'Payment needed', value: unpaidActiveJobs, tone: 'warning' } : null,
+    pendingRosterReplies ? { label: 'Roster replies pending', value: pendingRosterReplies, tone: 'warning' } : null,
+    onShiftCount ? { label: 'On shift now', value: onShiftCount, tone: 'neutral' } : null
+  ].filter(Boolean) as { label: string; value: number; tone: string }[];
   const visibleHistoryJobs = props.jobs;
   const visibleJobsForView = jobsView === 'active' ? activeJobs : jobsView === 'completed' ? completedJobs : visibleHistoryJobs;
   const operationalSelectedJob = visibleJobsForView.find((job) => job.id === props.selectedJob?.id);
@@ -4219,6 +4202,7 @@ function BusinessAdminView(props: {
   const clockNotice = props.smsNotice.toLowerCase().includes('clocked') ? props.smsNotice : '';
   const liveStaffNotice = props.rosterToast?.message || clockNotice || (latestRosterActivity ? `${latestRosterActivity.shift.staffName} ${latestRosterActivity.shift.response} ${latestRosterActivity.shift.start} roster` : '');
   const liveStaffNoticeTone: WorkflowToast['tone'] = props.rosterToast?.tone ?? (latestRosterActivity?.tone === 'declined' ? 'warning' : 'success');
+  const NextActionIcon = nextAction.icon;
 
   return (
     <div className="business-admin-layout">
@@ -4228,7 +4212,7 @@ function BusinessAdminView(props: {
           <div>
             <span className="eyebrow">{greetingForNow()}</span>
             <h2>Today at {props.business.name}</h2>
-            <p>{activeJobs.length ? `${activeJobs.length} active jobs in the queue. ${readyJobs} ready for pickup.` : 'A clean workspace for today’s jobs.'}</p>
+            <p>{activeJobs.length ? 'Your live workspace for customer jobs, payments, and staff handover.' : 'Everything is clear. Add the next customer order when work arrives.'}</p>
             <div className="business-identity-row" aria-label="Business profile">
               {activeBusinessLocation && <span>{activeBusinessLocation}</span>}
               <span>{industryPreset.label}</span>
@@ -4237,28 +4221,35 @@ function BusinessAdminView(props: {
             <small className="powered-by-inline">Powered by Verola</small>
           </div>
         </div>
-        <div className="command-stats stats-4">
-          <div><strong>{activeJobs.length}</strong><span>Active jobs</span></div>
-          <div><strong>{readyJobs}</strong><span>Ready</span></div>
-          <div><strong>{onShiftCount}</strong><span>On shift</span></div>
-          <div><strong>{smsReady ? 'On' : 'Off'}</strong><span>SMS</span></div>
+        <div className="owner-next-card">
+          <span>Next best action</span>
+          <strong>{nextAction.label}</strong>
+          <p>{nextAction.detail}</p>
+          <a href={nextAction.href}>
+            <NextActionIcon size={17} />
+            Open
+          </a>
         </div>
       </section>
 
       <section className="business-focus-strip" aria-label="Today’s business focus">
         <div className="focus-copy">
-          <span className="eyebrow">Today’s focus</span>
-          <h3>{activeJobs.length ? 'Keep work moving and customers updated.' : 'Start the day with a clean queue.'}</h3>
-          <p>{focusMessage}</p>
+          <span className="eyebrow">Today’s priorities</span>
+          <h3>{priorityItems.length ? 'Only the things that need attention.' : 'Nothing needs attention right now.'}</h3>
+          <p>{priorityItems.length ? 'Verola keeps the noise down so the team can work from the queue.' : 'No active jobs, unpaid orders, or roster replies are waiting.'}</p>
         </div>
-        <div className="focus-card-grid">
-          {focusCards.map((card) => (
-            <div className={`focus-card ${card.tone}`} key={card.label}>
-              <span>{card.label}</span>
-              <strong>{card.value}</strong>
-              <small>{card.detail}</small>
+        <div className="priority-pill-grid">
+          {priorityItems.length ? priorityItems.map((item) => (
+            <div className={`priority-pill ${item.tone}`} key={item.label}>
+              <strong>{item.value}</strong>
+              <span>{item.label}</span>
             </div>
-          ))}
+          )) : (
+            <div className="priority-empty">
+              <CheckCircle2 size={18} />
+              <span>All clear</span>
+            </div>
+          )}
         </div>
       </section>
 
@@ -4334,7 +4325,7 @@ function BusinessAdminView(props: {
 
       <section className="admin-secondary-grid">
         {features.rostering && <details className="panel admin-drawer roster-drawer" id="staff-rosters">
-          <summary><CalendarPlus size={18} /> Rostering <span>{pendingRosterReplies} pending</span></summary>
+          <summary><CalendarPlus size={18} /> Rostering <span>{pendingRosterReplies ? `${pendingRosterReplies} pending` : 'Plan shifts'}</span></summary>
           <RosterOperationsSummary shifts={props.rosterShifts} toast={props.rosterToast} />
           <RosterPlanner
             staff={props.staff}
@@ -4349,7 +4340,7 @@ function BusinessAdminView(props: {
 
       <section className="admin-support-grid">
         <details className="panel admin-drawer" id="workflow-settings">
-          <summary><Settings size={18} /> Workflow stages <span>4 automated stages</span></summary>
+          <summary><Settings size={18} /> Workflow stages <span>Customise labels</span></summary>
           <p className="workflow-editor-note">These stages control the internal order flow. Customer text is controlled separately in Messaging templates.</p>
           <div className="preset-banner">
             <div>
@@ -4367,7 +4358,7 @@ function BusinessAdminView(props: {
         </details>}
 
         <details className="panel admin-drawer">
-          <summary><Users size={18} /> Staff and shifts <span>{props.staff.length} users</span></summary>
+          <summary><Users size={18} /> Staff and shifts <span>{props.staff.length ? `${props.staff.length} users` : 'Invite staff'}</span></summary>
           <StaffInvitePanel
             name={props.staffInviteName}
             setName={props.setStaffInviteName}
@@ -4698,16 +4689,16 @@ function BusinessJobsNav({
     <div className="business-jobs-nav" aria-label="Jobs view">
       <button className={`queue-focus-card ${activeView === 'active' ? 'active' : ''}`} onClick={() => setView('active')}>
         <span>Active queue</span>
-        <strong>{activeCount}</strong>
+        {activeCount > 0 ? <strong>{activeCount}</strong> : <small>Clear</small>}
       </button>
       <div className="queue-archive-links">
         <button className={activeView === 'completed' ? 'active' : ''} onClick={() => setView('completed')}>
           <span>Completed today</span>
-          <strong>{completedCount}</strong>
+          {completedCount > 0 && <strong>{completedCount}</strong>}
         </button>
         <button className={activeView === 'history' ? 'active' : ''} onClick={() => setView('history')}>
           <span>Past jobs</span>
-          <strong>{historyCount}</strong>
+          {historyCount > 0 && <strong>{historyCount}</strong>}
         </button>
       </div>
     </div>
@@ -4725,7 +4716,7 @@ function QueueStageSummary({ jobs, workflowStages }: { jobs: Job[]; workflowStag
             <span>{index + 1}</span>
             <div>
               <strong>{simpleStageLabel(status, workflowStages)}</strong>
-              <small>{count} active</small>
+              {count > 0 && <small>{count} active</small>}
             </div>
           </div>
         );
@@ -4751,6 +4742,8 @@ function SimpleOrderTabs({
     { key: 'in_progress', label: simpleStageLabel('in_progress', workflowStages), count: jobs.filter((job) => job.status === 'in_progress').length },
     { key: 'ready_for_pickup', label: simpleStageLabel('ready_for_pickup', workflowStages), count: jobs.filter((job) => job.status === 'ready_for_pickup').length }
   ];
+
+  if (!jobs.length) return null;
 
   return (
     <div className="simple-order-tabs">

@@ -3636,6 +3636,12 @@ h1 {
   font-weight: 950;
 }
 
+.queue-focus-card small {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
 .queue-archive-links {
   display: flex;
   align-items: center;
@@ -7695,8 +7701,8 @@ body {
 
 /* Personalised business workspace polish */
 .branded-daily-command {
-  grid-template-columns: minmax(0, 1fr) minmax(360px, auto);
-  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  align-items: center;
   overflow: hidden;
 }
 
@@ -7733,23 +7739,19 @@ body {
   min-width: 0;
   border-radius: 999px;
   padding: 7px 10px;
-  color: rgba(255, 255, 255, 0.86);
-  background: rgba(255, 255, 255, 0.11);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #475569;
+  background: rgba(248, 250, 252, 0.88);
+  border: 1px solid rgba(15, 23, 42, 0.08);
   font-size: 0.78rem;
   font-weight: 850;
   line-height: 1.1;
 }
 
-.stats-4 {
-  grid-template-columns: repeat(4, minmax(72px, 1fr));
-}
-
 .business-focus-strip {
   display: grid;
-  grid-template-columns: minmax(260px, 0.78fr) minmax(0, 1.45fr);
+  grid-template-columns: minmax(260px, 0.82fr) minmax(0, 1.18fr);
   gap: 16px;
-  align-items: stretch;
+  align-items: center;
   padding: 18px;
   border-radius: 24px;
   background:
@@ -7784,56 +7786,116 @@ body {
   line-height: 1.45;
 }
 
-.focus-card-grid {
+.priority-pill-grid {
   min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
+  justify-content: flex-end;
 }
 
-.focus-card {
-  min-width: 0;
-  display: grid;
-  gap: 5px;
-  padding: 14px;
-  border-radius: 18px;
+.priority-pill,
+.priority-empty {
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 999px;
+  padding: 10px 14px;
   background: #f8fafc;
   border: 1px solid rgba(15, 23, 42, 0.07);
 }
 
-.focus-card span,
-.focus-card small {
-  min-width: 0;
+.priority-pill strong {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #0f172a;
+  background: #ffffff;
+  font-size: 1rem;
+  line-height: 1;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.055);
+}
+
+.priority-pill span,
+.priority-empty span {
   color: #64748b;
-  font-size: 0.78rem;
-  font-weight: 850;
+  font-size: 0.84rem;
+  font-weight: 900;
   line-height: 1.25;
 }
 
-.focus-card strong {
-  min-width: 0;
-  color: #0f172a;
-  font-size: clamp(1.4rem, 3vw, 2rem);
-  line-height: 1;
+.priority-empty {
+  color: #047857;
+  background: #ecfdf5;
+  border-color: rgba(16, 185, 129, 0.22);
 }
 
-.focus-card.brand {
+.priority-pill.brand {
   background: color-mix(in srgb, var(--brand) 7%, #ffffff);
   border-color: color-mix(in srgb, var(--brand) 18%, rgba(15, 23, 42, 0.07));
 }
 
-.focus-card.success {
+.priority-pill.success {
   background: #ecfdf5;
   border-color: rgba(16, 185, 129, 0.18);
 }
 
-.focus-card.warning {
+.priority-pill.warning {
   background: #fff7ed;
   border-color: rgba(249, 115, 22, 0.2);
 }
 
-.focus-card.neutral {
+.priority-pill.neutral {
   background: #f8fafc;
+}
+
+.owner-next-card {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 38%),
+    rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
+}
+
+.owner-next-card > span {
+  color: color-mix(in srgb, var(--brand) 76%, #0f172a);
+  font-size: 0.74rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.owner-next-card strong {
+  color: #0f172a;
+  font-size: 1.18rem;
+  line-height: 1.18;
+}
+
+.owner-next-card p {
+  color: #64748b;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.owner-next-card a {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 14px;
+  padding: 10px 14px;
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--brand), var(--accent));
+  text-decoration: none;
+  font-weight: 950;
 }
 
 .business-quick-actions {
@@ -8101,7 +8163,7 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .focus-card-grid,
+  .priority-pill-grid,
   .business-quick-actions,
   .industry-preset-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -8152,7 +8214,7 @@ body {
     border-radius: 20px;
   }
 
-  .focus-card-grid,
+  .priority-pill-grid,
   .business-quick-actions,
   .industry-preset-grid {
     grid-template-columns: 1fr;
