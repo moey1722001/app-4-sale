@@ -17,12 +17,12 @@ export type OrganisationBrand = {
 export const platformBrand: OrganisationBrand = {
   name: 'Verola',
   tagline: 'Run your business. Grow every day.',
-  logoUrl: '/verola-logo.png',
-  appIconUrl: '/verola-icon-512.png',
-  faviconUrl: '/favicon.svg',
-  lightLogoUrl: '/verola-logo.png',
-  darkLogoUrl: '/verola-logo.png',
-  emailHeaderLogoUrl: '/verola-logo.png',
+  logoUrl: '/verola-logo.png?v=20260526',
+  appIconUrl: '/verola-icon-512.png?v=20260526',
+  faviconUrl: '/favicon.png?v=20260526',
+  lightLogoUrl: '/verola-logo.png?v=20260526',
+  darkLogoUrl: '/verola-logo.png?v=20260526',
+  emailHeaderLogoUrl: '/verola-logo.png?v=20260526',
   primary: '#4f46e5',
   accent: '#06b6d4',
   poweredBy: 'Verola'
