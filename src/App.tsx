@@ -3375,6 +3375,7 @@ function App() {
             }}
             smsTemplates={smsTemplates}
             setSmsTemplate={(status, body) => setSmsTemplates((templates) => ({ ...templates, [status]: body }))}
+            previewPortal={openPortal}
           />
         )}
 
@@ -3508,7 +3509,8 @@ function SuperAdminView({
   setWorkflowStage,
   applyIndustryPreset,
   smsTemplates,
-  setSmsTemplate
+  setSmsTemplate,
+  previewPortal
 }: {
   businesses: Business[];
   businessesLoading: boolean;
@@ -3552,6 +3554,7 @@ function SuperAdminView({
   applyIndustryPreset: (presetKey?: string) => void;
   smsTemplates: Record<JobStatus, string>;
   setSmsTemplate: (status: JobStatus, body: string) => void;
+  previewPortal: (portal: Portal) => void;
 }) {
   const activeTenants = tenants.filter((tenant) => tenant.active).length;
   const pendingBusinessInvites = organisationInvites.filter((invite) => invite.role === 'business_admin' && inviteStatus(invite) === 'pending');
@@ -3675,8 +3678,8 @@ function SuperAdminView({
               <button>Primary action</button>
             </div>
             <div className="preview-actions">
-              <a href="/business-admin">Preview admin</a>
-              <a href="/staff">Preview staff</a>
+              <button type="button" onClick={() => previewPortal('admin')}>Preview admin</button>
+              <button type="button" onClick={() => previewPortal('staff')}>Preview staff</button>
             </div>
             <FeatureAccessPanel
               features={normaliseBusinessFeatures(activeBusiness)}

@@ -7899,7 +7899,7 @@ body {
 }
 
 .preset-banner button,
-.preview-actions a {
+.preview-actions button {
   min-height: 40px;
   border: 0;
   border-radius: 999px;
@@ -7972,9 +7972,10 @@ body {
   margin-top: 12px;
 }
 
-.preview-actions a {
+.preview-actions button {
   flex: 1 1 130px;
   text-align: center;
+  cursor: pointer;
 }
 
 .staff-shift-intro {
