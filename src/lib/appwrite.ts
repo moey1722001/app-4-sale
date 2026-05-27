@@ -2,6 +2,7 @@ import { Account, Client, Databases, Functions, Query, Storage, Teams } from 'ap
 
 const APPWRITE_ENDPOINT = 'https://syd.cloud.appwrite.io/v1';
 const APPWRITE_PROJECT_ID = '6a0ae5450036ec146492';
+const APPWRITE_INVITE_FUNCTION_ID = '6a0f5ee400325b40b2e9';
 
 // Allow env var overrides for local/staging environments
 const endpoint = (import.meta.env.VITE_APPWRITE_ENDPOINT as string | undefined) || APPWRITE_ENDPOINT;
@@ -12,7 +13,7 @@ export const appwriteOrganisationCollectionId = (import.meta.env.VITE_APPWRITE_O
 const configuredInviteFunctionId = import.meta.env.VITE_APPWRITE_INVITE_FUNCTION_ID as string | undefined;
 export const appwriteInviteFunctionId = configuredInviteFunctionId === '6a0f5ee79aa7bce5c892'
   ? '6a0f5ee400325b40b2e9'
-  : configuredInviteFunctionId;
+  : configuredInviteFunctionId || APPWRITE_INVITE_FUNCTION_ID;
 export const appwriteSmsFunctionId = import.meta.env.VITE_APPWRITE_SMS_FUNCTION_ID as string | undefined;
 export const appwriteLogoBucketId = (import.meta.env.VITE_APPWRITE_LOGO_BUCKET_ID as string | undefined) || 'organisation-logos';
 export const appBaseUrl = (import.meta.env.VITE_APP_URL as string | undefined)?.replace(/\/$/, '');
