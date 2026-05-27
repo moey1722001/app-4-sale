@@ -195,23 +195,36 @@ async function upsertOrganisation(databases, payload) {
     featureRostering: business?.featureRostering ?? business?.features?.rostering ?? true,
     featureTimeClock: business?.featureTimeClock ?? business?.features?.timeClock ?? true,
   };
+  const retryData = { ...data };
+  delete retryData.featureJobs;
+  delete retryData.featureSms;
+  delete retryData.featureRostering;
+  delete retryData.featureTimeClock;
+
   try {
     await databases.updateDocument(databaseId, organisationsCollectionId, businessId, data);
   } catch (updateError) {
     try {
       await databases.createDocument(databaseId, organisationsCollectionId, businessId, data);
     } catch (createError) {
-      const retryData = { ...data };
-      delete retryData.featureJobs;
-      delete retryData.featureSms;
-      delete retryData.featureRostering;
-      delete retryData.featureTimeClock;
-      try {
+      const createMessage = createError?.message || '';
+      const updateMessage = updateError?.message || '';
+      const alreadyExists = createError?.code === 409 || createMessage.includes('already exists');
+      const invalidStructure = createMessage.includes('Invalid document structure') || updateMessage.includes('Invalid document structure');
+
+      if (alreadyExists || invalidStructure) {
         await databases.updateDocument(databaseId, organisationsCollectionId, businessId, retryData);
-      } catch {
-        await databases.createDocument(databaseId, organisationsCollectionId, businessId, retryData);
+      } else {
+        try {
+          await databases.createDocument(databaseId, organisationsCollectionId, businessId, retryData);
+        } catch (retryCreateError) {
+          if (retryCreateError?.code === 409 || retryCreateError?.message?.includes('already exists')) {
+            await databases.updateDocument(databaseId, organisationsCollectionId, businessId, retryData);
+          } else {
+            throw retryCreateError;
+          }
+        }
       }
-      if (!createError?.message?.includes('Invalid document structure')) throw createError;
     }
   }
   return true;
